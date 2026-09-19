@@ -1,62 +1,56 @@
-# Statistical thinking for experimental scientists
+# Statistical thinking: a workshop for experimental scientists
+Jitao David Zhang and Christian Weinmann, September 2026
 
-**A three-hour workshop.** One synthetic CellTiter-Glo experiment — 8 hepatocyte lots × 2 compounds × 3 wells over 2 run days — carries all ten modules, each following the same loop: **Question → Design → Data → Analysis and uncertainty → Decision.**
+## Background
 
-| | Module | The question it answers | What to take away |
-|---|---|---|---|
-| **0:00** | **1 · The question** | What are we actually asking, and what difference would we act on? | Statistics cannot rescue an experiment whose question was never defined. Fix the threshold *before* the data, on the scale you measure. |
-| **0:15** | **2 · Variation** | What does one number tell us? | Some variation is signal, some is the price of measuring, some is a design choice you still have. |
-| **0:30** | **3 · What is *n*?** | Technical or biological replicate? | *n* is the number of **independent units** — analyse at that level. Counting wells manufactures confidence. |
-| *0:45* | *Break* | | |
-| **1:00** | **4 · Design** | Blocking, randomisation, standardisation | Design decides what statistics can separate later. No analysis can unmix a confounder. |
-| **1:15** | **5 · Paired or not** | Are the observations linked by design? | The test follows the design. Pairing is fixed before the data exist, never found by trying both. |
-| **1:30** | **6 · Inference** | What do *p*, effect size and CI mean? | The *p*-value answers a narrow question about a world we do not believe in. Decide on the effect and its interval. |
-| **1:45** | **7 · Outliers** | Artefact or biology? | Implausible *given the controls* is QC. Inconvenient *given the hypothesis* is manipulation. |
-| *2:00* | *Break* | | |
-| **2:15** | **8 · Power** | How many, and how good is the decision? | Power needs an effect worth detecting. Significance is easier to reach than a decision. |
-| **2:30** | **9 · Review** | What did the design decide for us? | The arithmetic always runs. It never tells you whether it was entitled to. |
-| **2:45** | **10 · Next steps** | How to get help, including from an LLM | Every fact that makes a good prompt is a design fact, decided before any data existed. |
+The three-hour workshop aims at helping wet-lab researchers with familiar with statistical thinking, and prepare you to ask questions that lead to better experiment design and data analysis.
+
+## Agenda
+
+The workshop consists of 15-minute modules.
+
+**Module I**: What questions are we asking, and what is the minimal difference that we care about?
+We act in the order of question, threshold, experiments, and statistics, not the reverse.
+
+**Module II**: What types of variance are there?
+Often we are interested in biological and compound-induced variance. Technical variance is sometimes interesting, and sometimes needs to be minimized. We often need a balance between variance and bias.
+
+**Module III**: What are biological and technical replications, and what are their uses?
+Biological replicates help us quantify variability between individual humans, animals, or cell cultures, while technical replicates help us quantify variability between parallel measurements. The sample size $n$ depends on the interest of the experiment and determines the level of analysis.
+
+**Module IV**: What are randomization and blocking, and why they are important tools for experiment design?
+If you have to compare A and B in an experiment run in two batches, make sure that you test both A and B within each batch, instead of testing A only in one batch and B in the other: this is the essence of 'blocking'. When multiple factors may affect the outcome, block those you can, and randomise the rest.
+
+**Module V**: How to compare two groups?
+While we are interested in the population, we only have samples and their measurements. Commonly used tools include unpaired t-test, paired t-test, and non-parametric test.
+
+**Module VI**: How to detect and handle outliers?
+Use common sense, your experience and observation, and prior knowledge and data to judge whether a value is an outlier. State the reasons explicitly, and in case of doubt, running statistical analyses with and without the outliers to test the sensitivity.
+
+**Module VII**: What do we mean with p-values, effect size, and the confidence intervals?
+In the context of two-group comparison, the null hypothesis is that at the population level there is no difference. When we apply t-tests to sample measurements, we get the p-value, which is the probability of observing the same or a stronger difference *given that the null hypothesis is true*. P-value only tells you something about there might be a difference at the population level, but not about how large is the difference: effect size matters. Confidence interval is an educated guess of the range of the effect size: its meaning can only be understood by repeating the statistical procedure many times.
+
+**Module VIII**: What is power, and how power affects the quality of our decision?
+Once we define a threshold that we care about, the sample number *n* of the experiment determines the power of the study: it is the probability that we can detect true difference if there is one, and too few samples may not allow us detect fine differences because of randomness.
+
+**Module IX**: How can I learn more and get help if I am stuck?
+We will recommend resources, share useful prompts for LLM, and offer help for consultation.
 
 ::: {.cols}
 
 ::: {.box}
-## Ten questions to ask before you trust an analysis
+## Ten simple questions to ask before designing an experiment or analysing a dataset
 
 1. What exactly is the question, and what difference would matter?
 2. What population do I want to generalise to?
 3. What is my independent experimental unit?
-4. Where can bias enter?
-5. Which variation do I block, randomise, or standardise?
-6. Does my plot preserve the experimental structure?
-7. Have I estimated the effect **and** its uncertainty?
-8. Does the test match the design?
-9. Have I investigated surprising values rather than deleted them?
-10. Am I deciding on effect size and context — not the *p*-value alone?
+4. Which variance do I block, randomise, or minimize?
+5. Does my plot reflect the experimental structure?
+6. Have I estimated the effect *and* its uncertainty?
+7. Does the test match the design?
+8. Have I investigate surprising values, and if necessary, label them as outliers?
+9. Am I deciding on effect size and context, instead of on the *p*-value alone?
+10. Can I improve my design and analysis by let AI criticize it and by consulting another colleague?
 :::
 
-::: {.box}
-## What the dataset shows
-
-| Analysis of the same 48 numbers | 95% CI | Entitled? |
-|---|---|---|
-| Count wells, ignore lots | 25.0 – 51.4 | **no** — too narrow to believe |
-| Confounded schedule | none possible | **no** — contains the day effect |
-| Lots, pairing ignored | 13.7 – 62.7 | yes — *inconclusive* |
-| **Lots, paired, blocked** | **26.4 – 50.0** | **yes — act** |
-
-Relevance threshold, fixed in advance: **24.3 pp**.
-
-Three conclusions, not two: evidence **for** a relevant difference · evidence **against** one · **inconclusive**. The third is a result worth reporting.
-:::
-
-::: {.box}
-## Briefing an LLM — or a colleague
-
-> *"Eight independent hepatocyte lots. Each lot tested with both compounds, three technical wells per lot and compound. The independent unit is the **lot**, not the well. Plates ran over two days; day is balanced across compounds. A difference below 24 percentage points would not change our decision. Visualise the data so the pairing is visible, estimate the difference with its uncertainty, and compare that interval with our threshold. **Before recommending a test, tell me what you think the independent unit is and whether the comparison is paired.**"*
-
-The last sentence is the habit: make assumptions visible while they are cheap to correct.
-:::
-
-:::
-
-**To answer "which statistical test should I use?", you first have to answer "how were the data generated?"**
+Thank you for joining the workshop, and we welcome oral and written criticism, suggestions, and feedback!
