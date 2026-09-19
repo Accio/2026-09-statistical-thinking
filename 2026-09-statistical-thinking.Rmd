@@ -86,17 +86,31 @@ BASE_PT <- 12                  # smallest type anywhere in a figure
 GEOM_PT <- BASE_PT / .pt       # the same size for geom_text(), in mm
 
 theme_ctg <- theme_bw(base_size = BASE_PT) +
-  theme(plot.title    = element_text(face = "bold", size = BASE_PT + 1.5),
-        plot.subtitle = element_text(size = BASE_PT, colour = "grey30"),
-        axis.title    = element_text(size = BASE_PT),
+  theme(plot.title    = element_text(face = "bold", size = BASE_PT + 1.5,
+                                     margin = margin(b = 1)),
+        plot.subtitle = element_text(size = BASE_PT, colour = "grey30",
+                                     margin = margin(b = 3)),
+        axis.title.x  = element_text(size = BASE_PT, margin = margin(t = 3)),
+        axis.title.y  = element_text(size = BASE_PT, margin = margin(r = 3)),
         axis.text     = element_text(size = BASE_PT),
-        strip.text    = element_text(size = BASE_PT, face = "bold"),
+        strip.text    = element_text(size = BASE_PT, face = "bold",
+                                     margin = margin(2, 2, 2, 2)),
         legend.text   = element_text(size = BASE_PT),
         legend.title  = element_blank(),
         plot.title.position = "plot",
-        legend.key.size = unit(0.9, "lines"),
-        plot.margin   = margin(4, 6, 4, 4),
+        ## the defaults leave a lot of air around the legend and between
+        ## facets; most of the empty space in a small figure lives here
+        legend.key.size    = unit(0.8, "lines"),
+        legend.margin      = margin(0, 0, 0, 0),
+        legend.box.spacing = unit(3, "pt"),
+        panel.spacing      = unit(4, "pt"),
+        plot.margin        = margin(3, 5, 3, 3),
         panel.grid.minor = element_blank())
+
+## see the note in the workshop notebook: these are functions because a
+## ggplot2 scale object is mutable and must not be shared between plots
+tight_x <- function(add = 0.45) scale_x_discrete(expand = expansion(add = add))
+flush   <- expansion(add = 0)          # tile plots should fill their panel
 
 theme_ctg_flat <- theme_ctg + theme(panel.grid = element_blank())
 theme_set(theme_ctg)
@@ -161,7 +175,7 @@ plate_design <- wellIndex2position(1:96, format = "96") %>%
 count(plate_design, well_type)
 ```
 
-```{r plate-layout-view, fig.width=7, fig.height=3.6}
+```{r plate-layout-view, fig.width=7, fig.height=3.3}
 layout_cols <- c("test article" = "grey92", "vehicle" = "#cfe3f5",
                  "lysis control" = "#f7cfcb", "no-cell blank" = "#f3e2b0")
 
@@ -174,7 +188,9 @@ p_layout <- plate_design %>%
     well_type == "vehicle"       ~ "veh",
     TRUE                         ~ "blk")) %>%
   ggplot(aes(x = factor(column), y = fct_rev(row))) +
-  geom_tile(aes(fill = well_type), colour = "white", linewidth = 1.1) +
+  geom_tile(aes(fill = well_type), colour = "white", linewidth = 0.9) +
+  scale_x_discrete(expand = flush) +
+  scale_y_discrete(expand = flush) +
   geom_text(aes(label = label), size = GEOM_PT * 0.72) +
   scale_fill_manual(values = layout_cols, name = NULL) +
   labs(title = "Plate layout — one compound per plate, eight replicate rows",
@@ -215,12 +231,14 @@ schedule <- bind_rows(
 schedule %>% count(design, compound, weekday)
 ```
 
-```{r design-view, fig.width=7, fig.height=4}
+```{r design-view, fig.width=6, fig.height=3.6}
 day_cols <- c("Friday" = "#e07b39", "Monday" = "#4c8fbd")
 
 p_design <- schedule %>%
   ggplot(aes(x = compound, y = fct_rev(donor_id), fill = weekday)) +
-  geom_tile(colour = "white", linewidth = 1.4) +
+  geom_tile(colour = "white", linewidth = 1.2) +
+  scale_x_discrete(expand = flush) +
+  scale_y_discrete(expand = flush) +
   geom_text(aes(label = str_sub(weekday, 1, 3)), size = GEOM_PT * 0.85,
             colour = "white", fontface = "bold") +
   facet_wrap(~ design) +
@@ -343,7 +361,7 @@ glimpse(ctg)
 This is the diagnostic you would actually run — it needs no compound data, and
 it works identically in both designs.
 
-```{r vehicle-diagnostic, fig.width=7, fig.height=4}
+```{r vehicle-diagnostic, fig.width=4.4, fig.height=3.4}
 vehicle_summary <- ctg %>%
   filter(well_type == "vehicle", !is_edge, design == DESIGNS[1]) %>%
   group_by(weekday) %>%
@@ -355,8 +373,9 @@ vehicle_summary %>%
 p_vehicle <- ctg %>%
   filter(well_type == "vehicle", !is_edge, design == DESIGNS[1]) %>%
   ggplot(aes(weekday, raw_rlu / 1e6, fill = weekday)) +
-  geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.7) +
+  geom_boxplot(width = 0.55, outlier.shape = NA, alpha = 0.7) +
   geom_jitter(width = 0.12, size = 1.6, alpha = 0.7) +
+  tight_x(0.38) +
   scale_fill_manual(values = day_cols, guide = "none") +
   labs(title = "Vehicle wells by run day",
        subtitle = "the reference the whole plate is normalised against",
@@ -412,7 +431,7 @@ plate_qc %>%
   arrange(qc_pass, plate_id)
 ```
 
-```{r qc-figure, fig.width=7, fig.height=6.4}
+```{r qc-figure, fig.width=6.4, fig.height=5.6}
 p_qc <- plate_qc %>%
   filter(design == DESIGNS[1]) %>%
   pivot_longer(c(z_prime, vehicle_cv, vehicle_rel),
@@ -422,7 +441,7 @@ p_qc <- plate_qc %>%
                          vehicle_cv  = "Vehicle CV",
                          vehicle_rel = "Vehicle / median")) %>%
   ggplot(aes(x = fct_reorder(plate_id, value), y = value, fill = qc_pass)) +
-  geom_col() +
+  geom_col(width = 0.82) +
   geom_hline(data = tibble(metric = c("Z' factor", "Vehicle CV",
                                       "Vehicle / median"),
                            yint = c(0.5, 0.15, 0.5)),
@@ -609,7 +628,7 @@ alias(fit_confounded)
 
 # Figures
 
-```{r results-figure, fig.width=7, fig.height=17.5}
+```{r results-figure, fig.width=7, fig.height=14.5}
 cpd_cols <- c("CPD-A" = "#1f6fb4", "CPD-B" = "#c1443b")
 
 grid <- tibble(logc = seq(log10(0.2), log10(1500), length.out = 200))
@@ -656,6 +675,7 @@ pC <- separation %>%
              linewidth = 0.9) +
   geom_line(aes(group = donor_id), colour = "grey75", linewidth = 0.6) +
   geom_point(aes(colour = design), size = 2.4, show.legend = FALSE) +
+  tight_x(0.38) +
   stat_summary(fun = gm, fun.min = gm, fun.max = gm, geom = "crossbar",
                width = 0.4, linewidth = 0.8, colour = "grey20") +
   annotate("text", x = 0.6, y = true_sep * 1.06,
@@ -675,7 +695,8 @@ pD <- ic50_qc %>%
          rel_bias = ic50 / ic50_true - 1) %>%
   ggplot(aes(metric, rel_bias, fill = weekday)) +
   geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
-  geom_boxplot(width = 0.55, alpha = 0.8, outlier.shape = NA) +
+  geom_boxplot(width = 0.62, alpha = 0.8, outlier.shape = NA) +
+  tight_x(0.4) +
   facet_wrap(~ design) +
   scale_fill_manual(values = day_cols) +
   scale_y_continuous(labels = scales::percent) +
@@ -690,17 +711,17 @@ fig
 
 ```{r export-figures}
 openFileDevice(file.path(params$outdir, "ctg_weekday_results.pdf"),
-               width = 7, height = 17.5)
+               width = 7, height = 14.5)
 print(fig)
 closeFileDevice()
 
 openFileDevice(file.path(params$outdir, "ctg_weekday_design.pdf"),
-               width = 7, height = 4)
+               width = 6, height = 3.6)
 print(p_design)
 closeFileDevice()
 
 openFileDevice(file.path(params$outdir, "ctg_plate_layout.pdf"),
-               width = 7, height = 3.6)
+               width = 7, height = 3.3)
 print(p_layout)
 closeFileDevice()
 ```
@@ -927,7 +948,7 @@ tibble(estimator = c("unweighted", "inverse-variance weighted"),
 
 # Figures for the perturbations
 
-```{r perturbation-figure, fig.width=7, fig.height=17.5}
+```{r perturbation-figure, fig.width=7, fig.height=14.5}
 ## E: variance is not constant
 pE <- rep_stats %>%
   ggplot(aes(mean_viab, sd_viab, colour = lot)) +
@@ -951,6 +972,7 @@ pF <- scenarios %>%
   geom_hline(yintercept = true_sep, linetype = "dashed", colour = "grey30",
              linewidth = 0.9) +
   geom_point(size = 2.2, alpha = 0.8, colour = "#3b7a57") +
+  tight_x(0.42) +
   stat_summary(fun = gm, fun.min = gm, fun.max = gm, geom = "crossbar",
                width = 0.4, colour = "grey20") +
   scale_y_log10() +
@@ -986,7 +1008,9 @@ pH <- var_decomp %>%
   mutate(source = recode(source, var_biological = "biological",
                          var_technical = "technical")) %>%
   ggplot(aes(compound, variance, fill = source)) +
-  geom_col(width = 0.6) +
+  geom_col(width = 0.62) +
+  tight_x(0.4) +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
   scale_fill_manual(values = c(biological = "#3b7a57", technical = "#d9a441")) +
   labs(title = "H  What the across-donor spread is made of",
        subtitle = "the quoted GSD mixes donor biology with assay noise",
@@ -999,12 +1023,12 @@ fig2
 
 ```{r export-perturbation-figure}
 openFileDevice(file.path(params$outdir, "ctg_perturbations.pdf"),
-               width = 7, height = 17.5)
+               width = 7, height = 14.5)
 print(fig2)
 closeFileDevice()
 
 openFileDevice(file.path(params$outdir, "ctg_plate_qc.pdf"),
-               width = 7, height = 6.4)
+               width = 6.4, height = 5.6)
 print(p_qc)
 closeFileDevice()
 ```

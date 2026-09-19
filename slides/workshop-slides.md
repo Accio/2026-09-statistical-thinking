@@ -90,7 +90,7 @@ a **3-fold shift in potency** is what they would act on.
 
 ## A threshold has to be carried onto the scale you measure
 
-![](output/figures/m1-threshold-1.png)
+![](output/figures/m1-threshold-1.png){height=4.4in}
 
 ## The threshold: 24.3 pp, not 37.8 pp
 
@@ -121,7 +121,7 @@ on the scale you will actually measure.
 
 ## Six numbers from the first lot
 
-![](output/figures/m2-dots-1.png)
+![](output/figures/m2-dots-1.png){height=4.4in}
 
 ## The bar chart is not wrong — it is uninformative
 
@@ -131,7 +131,7 @@ Show the points. Always.
 
 ## Nothing changes but the answer
 
-![](output/figures/m2-mean-moves-1.png)
+![](output/figures/m2-mean-moves-1.png){height=4.4in}
 
 ::: notes
 The truth is a fixed dashed line. Every repeat lands somewhere else. This is
@@ -140,7 +140,7 @@ sampling uncertainty, introduced without a single equation.
 
 ## Variation is not one thing
 
-![](output/figures/m2-taxonomy-1.png)
+![](output/figures/m2-taxonomy-1.png){height=4.4in}
 
 ## Four kinds, four responses
 
@@ -153,7 +153,7 @@ sampling uncertainty, introduced without a single equation.
 
 ## Bias and variance
 
-![](output/figures/m2-target-1.png)
+![](output/figures/m2-target-1.png){height=4.4in}
 
 ## Two scenarios to argue about
 
@@ -221,7 +221,7 @@ pseudoreplication look obviously wrong — it usually does not.
 
 ## Twelve measurements, two ways to spend them
 
-![](output/figures/m3-designs-1.png)
+![](output/figures/m3-designs-1.png){height=4.4in}
 
 ## Neither design is better
 
@@ -259,11 +259,11 @@ the *reference* propagates into every value on that plate.
 
 ## The day effect is visible without any compound data
 
-![](output/figures/m4-vehicle-1.png)
+![](output/figures/m4-vehicle-1.png){height=4.4in}
 
 ## The only difference is which day each plate ran
 
-![](output/figures/m4-designs-1.png)
+![](output/figures/m4-designs-1.png){height=4.4in}
 
 ## On the real data, confounding does not announce itself
 
@@ -340,7 +340,7 @@ After the experiment, no analysis can unmix a confounder.
 
 ## The way this comparison is usually drawn
 
-![](output/figures/m5-clouds-1.png)
+![](output/figures/m5-clouds-1.png){height=4.4in}
 
 ## What did the first graph hide?
 
@@ -417,7 +417,7 @@ Draw the structure before you test it, and the right test is usually obvious.
 
 Then run the whole study 2,000 times in that imaginary world.
 
-![](output/figures/m6-null-1.png)
+![](output/figures/m6-null-1.png){height=4.4in}
 
 ## Panel A *is* the p-value
 
@@ -439,7 +439,7 @@ That is what a 5% false-positive rate means.
 
 ## "95% confidence" is a statement about the procedure
 
-![](output/figures/m6-coverage-1.png)
+![](output/figures/m6-coverage-1.png){height=4.4in}
 
 ## Which result is more informative?
 
@@ -451,7 +451,7 @@ Only **B** can be compared with a threshold. Only B supports a decision.
 
 ## Read the interval against the threshold, not against zero
 
-![](output/figures/m6-three-1.png)
+![](output/figures/m6-three-1.png){height=4.4in}
 
 ## Three conclusions, not two
 
@@ -485,7 +485,7 @@ decide on the second.
 
 ## Two values look wrong. They are not the same kind of thing.
 
-![](output/figures/m7-candidates-1.png)
+![](output/figures/m7-candidates-1.png){height=4.4in}
 
 ## Candidate 1 — a single well
 
@@ -556,7 +556,7 @@ The first is a QC exclusion. The second is data manipulation.
 
 ## Same effect, same assay, same noise. Only *n* changes.
 
-![](output/figures/m8-power-fig-1.png)
+![](output/figures/m8-power-fig-1.png){height=4.4in}
 
 ## Two kinds of power
 
@@ -581,7 +581,7 @@ It is a property of an assay **plus a hypothesised effect size**.
 
 ## Underpowered studies do not just fail — they mislead
 
-![](output/figures/m8-exaggeration-fig-1.png)
+![](output/figures/m8-exaggeration-fig-1.png){height=4.4in}
 
 ## The bias always points the same way
 
@@ -592,7 +592,7 @@ An underpowered literature is not merely noisy. It is **biased**.
 
 ## Where to spend 24 wells
 
-![](output/figures/m8-allocation-1.png)
+![](output/figures/m8-allocation-1.png){height=4.4in}
 
 ## Technical replicates cannot substitute for lots
 

@@ -80,8 +80,7 @@ Rendering the notebook also writes `output/figures/*.png` and `output/workshop/*
 
 Needs `pandoc` and `weasyprint` in addition to R. Both are only used for the deck and the handout — the two documents render with `rmarkdown` alone.
 
-Slide deck and handout
-----------------------
+## Slide deck and handout
 
 | File | What it is |
 |---|---|
@@ -95,9 +94,15 @@ The deck is generated as **PowerPoint**, so it stays editable after the build:
 reuses `output/figures/` rather than duplicating the plotting code, which is
 what keeps the deck and the notebook from drifting apart.
 
-The deck is 4:3, pandoc's default. To restyle it, run `make reference-doc`
-once, open `slides/reference.pptx`, set 16:9 and apply your own fonts and
-colours. The Makefile picks that file up automatically from then on.
+The deck is 16:9 (10 x 5.625 in), pandoc's default. To restyle it, run
+`make reference-doc` once, open `slides/reference.pptx`, and apply your own
+fonts, colours and placeholder sizes. The Makefile picks that file up
+automatically from then on.
+
+Figures on slides are scaled to the content placeholder, so a compact,
+near-square figure will not fill a 16:9 slide edge to edge. That is the cost
+of keeping the figures compact in the documents, and it is the right trade:
+the type stays large and the figure stays legible.
 
 ## Conventions
 
@@ -107,8 +112,15 @@ whose plate fails QC.
 
 **Figures.** Both documents target a width of 7 inches or less with no text
 below 12 pt, so that figures stay readable when projected or printed at their
-natural size. Each document defines one theme and uses it everywhere; change
-the theme rather than individual plots.
+natural size. They are also drawn compactly: discrete axes use tighter
+expansion than the default, boxes and bars are widened into the space that
+frees up, tile plots fill their panel, and each canvas is only as large as its
+content needs — most figures are 4.4 to 6 inches wide.
+
+Each document defines one theme and uses it everywhere; change the theme
+rather than individual plots. Titles and subtitles have to be short enough for
+the panel they sit in — at these widths an over-long title on a two-panel
+figure will run into its neighbour.
 
 **Reproducibility.** Every Monte Carlo chunk sets its own seed, so repeated
 renders give identical numbers. This matters because the deck and the handout
