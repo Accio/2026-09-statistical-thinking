@@ -70,11 +70,11 @@ workshop_params <- function(...) {
     friday_vehicle_gain = 0.20,
 
     ## perturbation A - one genuinely sensitive lot (biology, not error)
-    sensitive_donor  = "HH-1263",
+    sensitive_donor  = "HH7",
     sensitive_fold   = 3.0,   # IC50 3x LOWER for both compounds
 
     ## perturbation B - one air bubble in one well (technical, documented)
-    bubble_donor     = "HH-1088",
+    bubble_donor     = "HH2",
     bubble_compound  = "CPD-B",
     bubble_replicate = 2L,
     bubble_gain      = 0.35,  # that single well reads at 35% of what it should
@@ -95,8 +95,8 @@ simulate_workshop_data <- function(...) {
 
   ## --- the eight lots, same identities as the appendix document ---------
   donors <- tibble(
-    donor_id    = c("HH-1071", "HH-1088", "HH-1122", "HH-1154",
-                    "HH-1188", "HH-1204", "HH-1263", "HH-1310"),
+    donor_id    = c("HH1", "HH2", "HH3", "HH4",
+                    "HH5", "HH6", "HH7", "HH8"),
     donor_sex   = c("F", "M", "F", "M", "M", "F", "F", "M"),
     donor_age   = c(34L, 52L, 61L, 45L, 29L, 58L, 41L, 66L),
     vehicle_rlu = c(2.10, 1.68, 2.44, 1.92, 2.28, 1.55, 2.02, 1.79) * 1e6,
@@ -147,7 +147,7 @@ simulate_workshop_data <- function(...) {
              design  = design_label,
              plate_id = sprintf("%s-%s-%s",
                                 substr(design_label, 1, 1),
-                                str_remove(donor_id, "HH-"),
+                                str_remove(donor_id, "HH"),
                                 str_remove(compound, "CPD-"))) %>%
       left_join(truth %>% select(donor_id, compound, ic50_true, hill, viab_true),
                 by = c("donor_id", "compound"))

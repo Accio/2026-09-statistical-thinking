@@ -10,8 +10,8 @@ output:
     toc_depth: 2
     number_sections: false
     code_folding: hide
-    fig_width: 10
-    fig_height: 5.5
+    fig_width: 7
+    fig_height: 4.5
 params:
   seed: 20260919
   n_sim: 2000          # Monte Carlo replicates for modules 6 and 8
@@ -20,7 +20,13 @@ params:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
-                      fig.align = "center", dev = "png", dpi = 150)
+                      fig.align = "center", dev = "png", dpi = 200,
+                      ## figures are drawn at their final size: 7 inches or
+                      ## less, so 12 pt text really is 12 pt on the page
+                      fig.width = 7, fig.height = 4.5,
+                      ## keep every figure on disk: the slide deck and the
+                      ## one-pager are built from these files by the Makefile
+                      fig.path = "output/figures/")
 ```
 
 ```{r libraries}
@@ -33,14 +39,23 @@ source("R/simulate_workshop_data.R")
 set.seed(params$seed)
 dir.create(params$outdir, showWarnings = FALSE, recursive = TRUE)
 
-theme_ws <- theme_bw(base_size = 16) +
-  theme(plot.title    = element_text(face = "bold", size = 18),
-        plot.subtitle = element_text(size = 15, colour = "grey30"),
-        axis.title    = element_text(size = 16),
-        axis.text     = element_text(size = 14),
-        strip.text    = element_text(size = 15, face = "bold"),
-        legend.text   = element_text(size = 14),
+## One theme for the whole document. Nothing is below 12 pt, and every figure
+## is drawn at 7 inches wide or less, so the text keeps a generous share of
+## the canvas instead of shrinking when the figure is placed on a slide.
+BASE_PT <- 12                  # smallest type anywhere in a figure
+GEOM_PT <- BASE_PT / .pt       # the same size for geom_text()/annotate(), mm
+
+theme_ws <- theme_bw(base_size = BASE_PT) +
+  theme(plot.title    = element_text(face = "bold", size = BASE_PT + 1.5),
+        plot.subtitle = element_text(size = BASE_PT, colour = "grey30"),
+        axis.title    = element_text(size = BASE_PT),
+        axis.text     = element_text(size = BASE_PT),
+        strip.text    = element_text(size = BASE_PT, face = "bold"),
+        legend.text   = element_text(size = BASE_PT),
         legend.title  = element_blank(),
+        plot.title.position = "plot",
+        legend.key.size = unit(0.9, "lines"),
+        plot.margin   = margin(4, 6, 4, 4),
         panel.grid.minor = element_blank())
 theme_set(theme_ws)
 
@@ -149,7 +164,7 @@ So the threshold has to be translated. The translation is not a single number,
 because the same potency shift produces a different viability gap depending on
 where a lot sits on the curve.
 
-```{r m1-threshold, fig.width=12, fig.height=5}
+```{r m1-threshold, fig.width=7, fig.height=8.6}
 curve_df <- expand_grid(
     series = c("CPD-A reference", "a 3-fold less potent compound"),
     conc   = 10^seq(log10(0.3), log10(1000), length.out = 300)) %>%
@@ -168,7 +183,7 @@ p1a <- ggplot(curve_df, aes(conc, viability, colour = series)) +
            linewidth = 1.2, colour = "grey25",
            arrow = arrow(ends = "both", length = unit(0.18, "cm"))) +
   annotate("label", x = CONC, y = (v_lo + v_hi) / 2,
-           label = sprintf("%.0f pp", v_hi - v_lo), size = 5) +
+           label = sprintf("%.0f pp", v_hi - v_lo), size = GEOM_PT) +
   geom_vline(xintercept = CONC, linetype = "dotted", colour = "grey40") +
   scale_x_log10() +
   scale_colour_manual(values = c("CPD-A reference" = "#1f6fb4",
@@ -184,18 +199,17 @@ p1b <- sim$mcid_by_donor %>%
   geom_hline(yintercept = MCID, linetype = "dashed", linewidth = 1) +
   geom_hline(yintercept = thr$mcid_pp_naive, linetype = "dotted",
              colour = "grey35", linewidth = 1) +
-  annotate("text", x = 0.7, y = MCID + 2, hjust = 0, size = 5,
+  annotate("text", x = 0.6, y = MCID + 2.2, hjust = 0, size = GEOM_PT,
            label = sprintf("average: %.1f pp", MCID)) +
-  annotate("text", x = 0.7, y = thr$mcid_pp_naive + 2, hjust = 0, size = 5,
-           colour = "grey35",
-           label = sprintf("if you translate at one\n'typical' lot: %.1f pp",
-                           thr$mcid_pp_naive)) +
+  annotate("text", x = 0.6, y = thr$mcid_pp_naive + 2.2, hjust = 0,
+           size = GEOM_PT, colour = "grey35",
+           label = sprintf("one 'typical' lot: %.1f pp", thr$mcid_pp_naive)) +
+  expand_limits(y = 45) +
   labs(title = "B  The same threshold, lot by lot",
-       subtitle = "a lot sitting at the top or bottom of the curve shows a smaller gap",
-       x = NULL, y = "Viability gap equal to a 3-fold shift (pp)") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12))
+       subtitle = "a lot at the top or bottom of the curve shows a smaller gap",
+       x = NULL, y = "Gap equal to a 3-fold shift (pp)")
 
-p1a | p1b
+p1a / p1b
 ```
 
 So the pre-registered rule becomes: **we will act if the average viability
@@ -236,7 +250,7 @@ The first lot comes off the plate reader. Six numbers. What can be said?
 
 ```{r m2-reveal}
 one_lot <- viab %>%
-  filter(donor_id == "HH-1071") %>%
+  filter(donor_id == "HH1") %>%
   select(donor_id, compound, replicate, raw_rlu, viability_pct)
 
 export_data(one_lot, "m02_one_lot",
@@ -246,7 +260,7 @@ one_lot
 
 ### Show the points, not a bar
 
-```{r m2-dots, fig.width=11, fig.height=5}
+```{r m2-dots, fig.width=7, fig.height=3.9}
 p2a <- one_lot %>%
   ggplot(aes(compound, viability_pct, colour = compound)) +
   stat_summary(fun = mean, geom = "col", fill = "grey85", colour = NA,
@@ -260,7 +274,7 @@ p2a <- one_lot %>%
 
 p2b <- one_lot %>%
   ggplot(aes(compound, viability_pct, colour = compound)) +
-  geom_point(size = 5, alpha = 0.85,
+  geom_point(size = 2.8, alpha = 0.85,
              position = position_jitter(width = 0.08, height = 0, seed = 1)) +
   stat_summary(fun = mean, geom = "crossbar", width = 0.45,
                colour = "grey25", linewidth = 0.6) +
@@ -280,9 +294,10 @@ data, which is why it is a poor default.
 Nothing about the lot or the compound changes below. The same measurement
 process is repeated twenty times, three wells at a time.
 
-```{r m2-mean-moves, fig.width=11, fig.height=5.5}
+```{r m2-mean-moves, fig.width=7, fig.height=4.2}
+set.seed(101)  ## fixed so the deck and handout stay in sync
 true_v <- 100 * hill_viability(CONC,
-                               sim$truth$ic50_true[sim$truth$donor_id == "HH-1071" &
+                               sim$truth$ic50_true[sim$truth$donor_id == "HH1" &
                                                    sim$truth$compound == "CPD-B"],
                                sim$params$hill_A)
 tech_cv <- 0.05 + 0.12 * (1 - true_v / 100)
@@ -298,12 +313,12 @@ rep_means <- repeats %>%
 ggplot(repeats, aes(experiment, viability)) +
   geom_hline(yintercept = true_v, linetype = "dashed", colour = "#c1443b",
              linewidth = 1) +
-  geom_point(colour = "grey55", size = 3, alpha = 0.8) +
-  geom_point(data = rep_means, aes(y = mean_viability), size = 5,
+  geom_point(colour = "grey55", size = 1.9, alpha = 0.8) +
+  geom_point(data = rep_means, aes(y = mean_viability), size = 2.9,
              colour = "#1f6fb4") +
   geom_line(data = rep_means, aes(y = mean_viability), colour = "#1f6fb4",
             linewidth = 0.9) +
-  annotate("text", x = 20.4, y = true_v, hjust = 1, vjust = -0.8, size = 5,
+  annotate("text", x = 20.4, y = true_v, hjust = 1, vjust = -0.8, size = GEOM_PT,
            colour = "#c1443b", label = "the unchanging truth") +
   labs(title = "Twenty repeats of one unchanged experiment",
        subtitle = "grey: individual wells   ·   blue: the mean of each repeat",
@@ -317,7 +332,8 @@ this cloud is — from a single experiment.
 
 ### Not all variation is the same
 
-```{r m2-taxonomy, fig.width=12, fig.height=5}
+```{r m2-taxonomy, fig.width=7, fig.height=4.4}
+set.seed(102)  ## fixed so the deck and handout stay in sync
 n_lots <- 8
 base   <- 100 * hill_viability(CONC, sim$params$ic50_A, sim$params$hill_A)
 lot_shift <- 100 * hill_viability(
@@ -337,7 +353,7 @@ taxonomy <- bind_rows(
 
 ggplot(taxonomy, aes(layer, value, colour = layer)) +
   geom_point(position = position_jitter(width = 0.14, seed = 3),
-             size = 3.4, alpha = 0.8) +
+             size = 2.2, alpha = 0.8) +
   stat_summary(fun = mean, geom = "crossbar", width = 0.5, colour = "grey25") +
   scale_colour_brewer(palette = "Dark2", guide = "none") +
   labs(title = "The same 24 wells, with variance sources switched on one at a time",
@@ -356,7 +372,8 @@ Four kinds, and they call for four different responses:
 
 ### Bias and variance
 
-```{r m2-target, fig.width=11, fig.height=10}
+```{r m2-target, fig.width=7, fig.height=7}
+set.seed(103)  ## fixed so the deck and handout stay in sync
 target_data <- expand_grid(
     bias     = c("unbiased", "biased"),
     variance = c("low variance", "high variance")) %>%
@@ -376,8 +393,8 @@ rings <- expand_grid(r = c(0.6, 1.2, 1.8, 2.4),
 
 ggplot(target_data) +
   geom_path(data = rings, aes(x, y, group = r), colour = "grey75") +
-  geom_point(aes(x, y), colour = "#c1443b", size = 2.8, alpha = 0.85) +
-  geom_point(aes(x = 0, y = 0), colour = "grey40", size = 2, shape = 3) +
+  geom_point(aes(x, y), colour = "#c1443b", size = 1.7, alpha = 0.85) +
+  geom_point(aes(x = 0, y = 0), colour = "grey40", size = 1.6, shape = 3) +
   facet_grid(variance ~ bias) +
   coord_equal(xlim = c(-2.6, 2.6), ylim = c(-2.6, 2.6)) +
   labs(title = "Bias is consistently wrong. Variance is inconsistently noisy.",
@@ -490,7 +507,8 @@ place. What it cannot do is *tell you* that it has.
 
 ### Twelve measurements, two ways to spend them
 
-```{r m3-designs, fig.width=11, fig.height=5.5}
+```{r m3-designs, fig.width=7, fig.height=4.6}
+set.seed(104)  ## fixed so the deck and handout stay in sync
 gp <- sim$params
 
 ## Experiment A: 12 lots x 1 well   |   Experiment B: 3 lots x 4 wells
@@ -509,9 +527,9 @@ one_study <- function(n_lots, n_wells) {
 
 design_cmp <- bind_rows(
   map_dfr(1:params$n_sim, ~ one_study(12, 1)) %>%
-    mutate(design = "A: 12 lots × 1 well"),
+    mutate(design = "A: 12 lots\n× 1 well"),
   map_dfr(1:params$n_sim, ~ one_study(3, 4)) %>%
-    mutate(design = "B: 3 lots × 4 wells"))
+    mutate(design = "B: 3 lots\n× 4 wells"))
 
 export_data(design_cmp %>% group_by(design) %>%
               summarise(across(everything(),
@@ -532,8 +550,7 @@ design_cmp %>%
   scale_fill_manual(values = c("#1f6fb4", "#c1443b"), guide = "none") +
   labs(title = "Both designs use 12 measurements",
        subtitle = "empty panel = that design cannot estimate that quantity at all",
-       x = NULL, y = "Estimated SD (pp)") +
-  theme(axis.text.x = element_text(size = 13))
+       x = NULL, y = "Estimated SD (pp)")
 ```
 
 Twelve lots × one well estimates lot-to-lot variation well and technical
@@ -569,7 +586,7 @@ Something real happened on Friday: the vehicle wells read about
 expressed relative to each plate's own vehicle, a shift in the reference
 propagates into every normalised value on that plate.
 
-```{r m4-vehicle, fig.width=11, fig.height=5}
+```{r m4-vehicle, fig.width=7, fig.height=4}
 vehicle_wells <- sim$ctg %>%
   filter(design == "Blocked", well_type == "vehicle") %>%
   select(donor_id, compound, weekday, replicate, raw_rlu)
@@ -580,7 +597,7 @@ export_data(vehicle_wells, "m04_vehicle_wells",
 vehicle_wells %>%
   ggplot(aes(weekday, raw_rlu / 1e6, fill = weekday)) +
   geom_boxplot(width = 0.45, alpha = 0.65, outlier.shape = NA) +
-  geom_point(position = position_jitter(width = 0.1, seed = 2), size = 2.6,
+  geom_point(position = position_jitter(width = 0.1, seed = 2), size = 1.8,
              alpha = 0.7) +
   scale_fill_manual(values = day_cols, guide = "none") +
   labs(title = "The run-day effect is visible in the vehicle wells alone",
@@ -590,7 +607,7 @@ vehicle_wells %>%
 
 ### The same lots, two schedules
 
-```{r m4-designs, fig.width=12, fig.height=4.6}
+```{r m4-designs, fig.width=7, fig.height=4.6}
 sim$schedule %>%
   select(donor_id, compound, Blocked = weekday_blocked,
          Confounded = weekday_confounded) %>%
@@ -600,7 +617,7 @@ sim$schedule %>%
   ggplot(aes(compound, fct_rev(donor_id), fill = weekday)) +
   geom_tile(colour = "white", linewidth = 1.4) +
   geom_text(aes(label = str_sub(weekday, 1, 3)), colour = "white",
-            fontface = "bold", size = 4.6) +
+            fontface = "bold", size = GEOM_PT) +
   facet_wrap(~ design) +
   scale_fill_manual(values = day_cols) +
   labs(title = "The only difference between the designs is which day each plate ran",
@@ -740,10 +757,11 @@ later. After the experiment, no analysis can unmix a confounder.
 Here is the study as two clouds of dots — the way this comparison is usually
 drawn.
 
-```{r m5-clouds, fig.width=12, fig.height=5.5}
+```{r m5-clouds, fig.width=7, fig.height=4.2}
+set.seed(105)  ## fixed so the deck and handout stay in sync
 p5a <- dm %>%
   ggplot(aes(compound, viability, colour = compound)) +
-  geom_point(size = 5, alpha = 0.85,
+  geom_point(size = 2.8, alpha = 0.85,
              position = position_jitter(width = 0.09, height = 0, seed = 7)) +
   stat_summary(fun = mean, geom = "crossbar", width = 0.45, colour = "grey25") +
   scale_colour_manual(values = cpd_cols, guide = "none") +
@@ -755,7 +773,7 @@ p5a <- dm %>%
 p5b <- dm %>%
   ggplot(aes(compound, viability)) +
   geom_line(aes(group = donor_id), colour = "grey65", linewidth = 0.8) +
-  geom_point(aes(colour = compound), size = 5, alpha = 0.9) +
+  geom_point(aes(colour = compound), size = 2.8, alpha = 0.9) +
   scale_colour_manual(values = cpd_cols, guide = "none") +
   coord_cartesian(ylim = c(0, 100)) +
   labs(title = "B  The same data, lots joined",
@@ -898,7 +916,8 @@ Assume, for a moment, that the two compounds are **identical**. Then run the
 whole study — 8 lots, 3 wells, both compounds — `r params$n_sim` times in that
 imaginary world, and record the difference each time.
 
-```{r m6-null, fig.width=12, fig.height=5.5}
+```{r m6-null, fig.width=7, fig.height=4.2}
+set.seed(106)  ## fixed so the deck and handout stay in sync
 null_world <- replicate_studies(params$n_sim, n_donors = 8, n_wells = 3,
                                 fold = 1)
 observed   <- tests[["Paired t"]]$estimate
@@ -955,7 +974,8 @@ A p-value is **not**:
 
 ### Confidence intervals, and what "95%" refers to
 
-```{r m6-coverage, fig.width=11, fig.height=6}
+```{r m6-coverage, fig.width=7, fig.height=5.4}
+set.seed(107)  ## fixed so the deck and handout stay in sync
 coverage_sims <- replicate_studies(100, n_donors = 8, n_wells = 3, fold = 5)
 true_effect   <- mean(coverage_sims$estimate)
 
@@ -965,7 +985,7 @@ coverage_sims %>%
   ggplot(aes(sim, estimate, colour = covers)) +
   geom_hline(yintercept = true_effect, linetype = "dashed", linewidth = 1) +
   geom_linerange(aes(ymin = lwr, ymax = upr), linewidth = 0.8) +
-  geom_point(size = 1.8) +
+  geom_point(size = 1.1) +
   coord_flip() +
   scale_colour_manual(values = c(`TRUE` = "grey55", `FALSE` = "#c1443b"),
                       labels = c(`TRUE` = "covers the truth",
@@ -993,12 +1013,12 @@ Only B can be compared with a threshold. Only B supports a decision.
 
 ### Three results, three different conclusions
 
-```{r m6-three, fig.width=11, fig.height=5}
+```{r m6-three, fig.width=7, fig.height=4.4}
 three <- tribble(
-  ~result,                        ~estimate, ~lwr, ~upr,
-  "A  large effect, very uncertain",   45,     -5,   95,
-  "B  tiny effect, very precise",       4,      1,    7,
-  "C  moderate effect, moderate CI",   38,     26,   50) %>%
+  ~result,                     ~estimate, ~lwr, ~upr,
+  "A  large, very uncertain",     45,      -5,   95,
+  "B  tiny, very precise",         4,       1,    7,
+  "C  moderate, moderate CI",     38,      26,   50) %>%
   mutate(verdict = case_when(
     lwr > MCID  ~ "relevant difference",
     upr < MCID  ~ "no relevant difference",
@@ -1015,10 +1035,12 @@ ggplot(three, aes(estimate, fct_rev(result), colour = verdict)) +
            fill = "grey92") +
   geom_vline(xintercept = MCID, linetype = "dashed", linewidth = 1) +
   geom_vline(xintercept = 0, colour = "grey60") +
-  geom_linerange(aes(xmin = lwr, xmax = upr), linewidth = 1.4) +
-  geom_point(size = 5) +
-  annotate("text", x = MCID + 1, y = 0.55, hjust = 0, size = 5,
-           label = sprintf("relevance threshold %.1f pp", MCID)) +
+  geom_linerange(aes(xmin = lwr, xmax = upr), linewidth = 1.2) +
+  geom_point(size = 3) +
+  annotate("text", x = MCID + 2, y = 0.56, hjust = 0, size = GEOM_PT,
+           label = sprintf("threshold %.1f pp", MCID)) +
+  scale_x_continuous(expand = expansion(mult = c(0.03, 0.07))) +
+  guides(colour = guide_legend(nrow = 2)) +
   scale_colour_manual(values = c("relevant difference" = "#3b7a57",
                                  "no relevant difference" = "#4c8fbd",
                                  "inconclusive" = "#d9a441")) +
@@ -1086,7 +1108,7 @@ decide on the second.
 
 Two values in the dataset look wrong. They are not the same kind of thing.
 
-```{r m7-candidates, fig.width=12, fig.height=5.5}
+```{r m7-candidates, fig.width=7, fig.height=5}
 lot_flags <- viab %>%
   group_by(donor_id, compound) %>%
   mutate(well_z = (viability_pct - median(viability_pct)) /
@@ -1101,22 +1123,23 @@ export_data(lot_flags %>% select(donor_id, compound, weekday, replicate,
 lot_flags %>%
   ggplot(aes(fct_reorder(donor_id, viability_pct), viability_pct,
              colour = compound)) +
-  geom_point(size = 4, alpha = 0.85,
+  geom_point(size = 2.4, alpha = 0.85,
              position = position_dodge(width = 0.5)) +
-  annotate("curve", x = 4.4, xend = 3.1, y = 8, yend = 20, curvature = -0.3,
-           arrow = arrow(length = unit(0.2, "cm")), colour = "grey35") +
-  annotate("text", x = 4.5, y = 5, hjust = 0, size = 4.6, colour = "grey25",
-           label = "candidate 1: one well, far from its own two siblings") +
-  annotate("curve", x = 1.6, xend = 0.9, y = 62, yend = 42, curvature = 0.3,
-           arrow = arrow(length = unit(0.2, "cm")), colour = "grey35") +
-  annotate("text", x = 1.7, y = 64, hjust = 0, size = 4.6, colour = "grey25",
-           label = "candidate 2: a whole lot, low for BOTH compounds") +
+  ## the bubble well is the CPD-B point of HH2, dodged to the right of centre
+  annotate("curve", x = 5.75, xend = 4.3, y = 13, yend = 20.3, curvature = -0.3,
+           arrow = arrow(length = unit(0.18, "cm")), colour = "grey35") +
+  annotate("text", x = 8.45, y = 9, hjust = 1, size = GEOM_PT, colour = "grey25",
+           label = "candidate 1: one well,\nfar from its two siblings") +
+  annotate("curve", x = 1.6, xend = 0.92, y = 66, yend = 45, curvature = 0.3,
+           arrow = arrow(length = unit(0.18, "cm")), colour = "grey35") +
+  annotate("text", x = 1.7, y = 72, hjust = 0, size = GEOM_PT, colour = "grey25",
+           label = "candidate 2: a whole lot,\nlow for BOTH compounds") +
   scale_colour_manual(values = cpd_cols) +
   labs(title = "All 48 wells",
        subtitle = "one of these is an artefact and one is biology",
        x = "Hepatocyte lot", y = "Viability (% of vehicle)") +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
-        legend.position = "bottom")
+  coord_cartesian(ylim = c(0, 104)) +
+  theme(legend.position = "bottom")
 ```
 
 ### Candidate 1 — a single well
@@ -1244,7 +1267,8 @@ Back to the original question, with the whole dataset visible.
 The same true `r thr$true_fold`-fold difference, the same assay, the same
 noise. Only the number of lots changes.
 
-```{r m8-power, fig.width=12, fig.height=5.5}
+```{r m8-power, fig.width=7, fig.height=4.5}
+set.seed(108)  ## fixed so the deck and handout stay in sync
 power_grid <- map_dfr(c(3, 6, 12, 24), function(n)
   replicate_studies(params$n_sim, n_donors = n, n_wells = 3,
                     fold = thr$true_fold))
@@ -1264,7 +1288,7 @@ export_data(power_summary, "m08_power_by_n",
 power_summary
 ```
 
-```{r m8-power-fig, fig.width=12, fig.height=5.5}
+```{r m8-power-fig, fig.width=7, fig.height=8.4}
 p8a <- power_summary %>%
   pivot_longer(c(power_significant, power_decisive),
                names_to = "criterion", values_to = "power") %>%
@@ -1273,7 +1297,7 @@ p8a <- power_summary %>%
            power_decisive    = "CI above the threshold\n(\"is it big enough to act on?\")")) %>%
   ggplot(aes(n_donors, power, colour = criterion)) +
   geom_hline(yintercept = 0.8, linetype = "dashed", colour = "grey45") +
-  geom_line(linewidth = 1.2) + geom_point(size = 4) +
+  geom_line(linewidth = 1.1) + geom_point(size = 2.6) +
   scale_x_continuous(breaks = c(3, 6, 12, 24)) +
   scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
   scale_colour_manual(values = c("#4c8fbd", "#3b7a57")) +
@@ -1295,7 +1319,7 @@ p8b <- power_grid %>%
        subtitle = "at n = 3 the study can return almost any answer",
        x = "Estimated difference (pp)", y = NULL)
 
-p8a | p8b
+p8a / p8b
 ```
 
 Two things to take from panel A. First, power is not a property of an assay —
@@ -1316,7 +1340,8 @@ studies that *do* get published, the effect is systematically overstated. The
 5-fold difference above is too easy to detect for this to bite, so the
 simulation below uses a genuinely marginal effect instead.
 
-```{r m8-exaggeration, fig.width=11, fig.height=5}
+```{r m8-exaggeration, fig.width=7, fig.height=4.5}
+set.seed(109)  ## fixed so the deck and handout stay in sync
 marginal <- map_dfr(c(3, 4, 6, 12, 24), function(n)
   replicate_studies(params$n_sim, n_donors = n, n_wells = 3, fold = 1.3))
 
@@ -1334,12 +1359,12 @@ export_data(exaggeration, "m08_exaggeration",
 exaggeration
 ```
 
-```{r m8-exaggeration-fig, fig.width=11, fig.height=5}
+```{r m8-exaggeration-fig, fig.width=7, fig.height=4.2}
 ggplot(exaggeration, aes(power, exaggeration)) +
   geom_hline(yintercept = 1, linetype = "dashed", colour = "grey45") +
   geom_line(linewidth = 1.2, colour = "#c1443b") +
-  geom_point(size = 4.5, colour = "#c1443b") +
-  geom_text(aes(label = paste0("n = ", n_donors)), vjust = -1.2, size = 5) +
+  geom_point(size = 2.8, colour = "#c1443b") +
+  geom_text(aes(label = paste0("n = ", n_donors)), vjust = -1.2, size = GEOM_PT) +
   scale_x_continuous(labels = scales::percent) +
   expand_limits(y = c(0.95, 1.5)) +
   labs(title = "The less power a study has, the more it exaggerates",
@@ -1356,7 +1381,8 @@ is a biased one, and the bias always points the same way.
 
 ### Where to spend twenty-four wells
 
-```{r m8-allocation, fig.width=11, fig.height=5}
+```{r m8-allocation, fig.width=7, fig.height=4.2}
+set.seed(110)  ## fixed so the deck and handout stay in sync
 allocation <- bind_rows(
   replicate_studies(params$n_sim, n_donors = 3, n_wells = 8,
                     fold = thr$true_fold) %>%
@@ -1378,7 +1404,7 @@ allocation %>%
   ggplot(aes(estimate, fill = allocation)) +
   geom_density(alpha = 0.55, colour = NA) +
   geom_vline(xintercept = MCID, linetype = "dashed", linewidth = 1) +
-  annotate("text", x = MCID + 1, y = 0, hjust = 0, vjust = -0.6, size = 5,
+  annotate("text", x = MCID + 1, y = 0, hjust = 0, vjust = -0.6, size = GEOM_PT,
            label = "relevance threshold") +
   scale_fill_manual(values = c("#c1443b", "#3b7a57")) +
   labs(title = "The same 24 wells, allocated two ways",

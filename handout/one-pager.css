@@ -1,0 +1,116 @@
+/* One A4 page. Dense by design --- if it spills to a second page, cut
+   content rather than shrinking the type below 7pt. */
+
+@page {
+  size: A4;
+  margin: 10mm 11mm 8mm 11mm;
+}
+
+html { font-size: 7.8pt; }
+
+body {
+  font-family: "Source Sans 3", "Source Sans Pro", "DejaVu Sans", sans-serif;
+  line-height: 1.26;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+/* pandoc --standalone emits its own <h1 class="title"> from the metadata;
+   the document supplies its real title as the first heading */
+h1.title, header#title-block-header { display: none; }
+
+h1 {
+  font-size: 15pt;
+  line-height: 1.1;
+  margin: 0 0 2mm 0;
+  padding-bottom: 1.5mm;
+  border-bottom: 1.6pt solid #1f6fb4;
+  color: #12405f;
+}
+
+h2 {
+  font-size: 8.5pt;
+  text-transform: uppercase;
+  letter-spacing: 0.055em;
+  color: #1f6fb4;
+  margin: 0 0 1.2mm 0;
+  padding-bottom: 0.6mm;
+  border-bottom: 0.5pt solid #c8d8e6;
+  break-after: avoid;
+}
+
+p { margin: 0 0 1.4mm 0; }
+
+/* ---- the agenda table ------------------------------------------------- */
+table {
+  width: 100%;
+  table-layout: fixed;      /* auto layout ignored the width hints below */
+  border-collapse: collapse;
+  font-size: 6.9pt;
+  margin: 0 0 2.2mm 0;
+}
+th {
+  text-align: left;
+  font-size: 6.8pt;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #5a6b78;
+  border-bottom: 0.7pt solid #9fb6c6;
+  padding: 0.5mm 1.4mm;
+}
+td {
+  padding: 0.55mm 1.4mm;
+  border-bottom: 0.35pt solid #e2e8ed;
+  vertical-align: top;
+}
+td:first-child { white-space: nowrap; color: #1f6fb4; width: 6%; }
+td:nth-child(2) { width: 15%; }
+td:nth-child(3) { width: 30%; }
+td:nth-child(4) { width: 49%; }
+/* break rows: the module cell is a bare <em>, not an <em> nested in <strong>,
+   which is what distinguishes them from rows mentioning *n* or *p* */
+tr:has(td:nth-child(2) > em) td {
+  color: #8a949c;
+  background: #f6f8fa;
+  padding: 0.35mm 1.4mm;
+}
+
+/* ---- the two-column lower half ---------------------------------------- */
+.cols {
+  column-count: 2;
+  column-gap: 6mm;
+  column-rule: 0.4pt solid #dde4ea;
+}
+/* each .box is a section that must stay whole: a heading, its table and the
+   sentences that read it. Without this the columns split them apart. */
+.box { break-inside: avoid; margin-bottom: 2.6mm; }
+.box > *:last-child { margin-bottom: 0; }
+.cols h2 { margin-top: 0; }
+.cols table { font-size: 6.9pt; }
+.cols td:first-child { width: 36%; white-space: normal; color: inherit; }
+.cols td:nth-child(2) { width: 26%; white-space: nowrap; }
+.cols td:nth-child(3) { width: 38%; }
+
+ol { margin: 0 0 1.5mm 0; padding-left: 4.2mm; }
+li { margin-bottom: 0.45mm; }
+
+blockquote {
+  margin: 0 0 1.4mm 0;
+  padding: 1.2mm 2mm;
+  background: #f2f6fa;
+  border-left: 1.6pt solid #1f6fb4;
+  font-size: 6.9pt;
+  line-height: 1.28;
+}
+blockquote p { margin: 0; }
+
+/* ---- closing line ----------------------------------------------------- */
+body > p:last-of-type {
+  margin-top: 2.4mm;
+  padding: 1.6mm 2mm;
+  background: #12405f;
+  color: #ffffff;
+  text-align: center;
+  font-size: 8.6pt;
+}
+body > p:last-of-type strong { color: #ffffff; }

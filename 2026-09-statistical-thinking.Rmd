@@ -9,8 +9,8 @@ output:
     toc_float: true
     number_sections: true
     code_folding: show
-    fig_width: 9
-    fig_height: 5.5
+    fig_width: 7
+    fig_height: 4.5
 params:
   seed: 20260919
   ic50_A: 10       # uM, ground truth for CPD-A (the more cytotoxic compound)
@@ -22,12 +22,12 @@ params:
   friday_vehicle_gain: 0.20  # vehicle wells read 20% higher on Friday
   edge_loss: 0.10  # fractional signal loss in perimeter wells; 0 switches it off
   ## --- perturbation 1: one plate fails technically -------------------------
-  failed_donor: "HH-1154"
+  failed_donor: "HH4"
   failed_compound: "CPD-B"
   failed_gain: 0.15     # whole-plate signal collapse (reagent under-dispense)
   failed_extra_cv: 0.30 # additional well-to-well CV on that plate
   ## --- perturbation 2: one genuinely sensitive donor -----------------------
-  sensitive_donor: "HH-1263"
+  sensitive_donor: "HH7"
   sensitive_factor: 0.70  # IC50 30% lower for BOTH compounds - real, not an error
   ## --- perturbation 3: unequal technical variance --------------------------
   floor_cv_gain: 0.12   # extra CV as the signal approaches the assay floor
@@ -36,7 +36,10 @@ params:
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
-                      fig.align = "center", dev = "png", dpi = 150)
+                      fig.align = "center", dev = "png", dpi = 200,
+                      ## every figure is drawn at its final size - 7 inches or
+                      ## less - so that 12 pt type really is 12 pt on the page
+                      fig.width = 7, fig.height = 4.5)
 ```
 
 # Purpose
@@ -75,6 +78,28 @@ library(ribiosPlot)   # royalbluered, p2asterisk, openFileDevice, closeFileDevic
 
 set.seed(params$seed)
 dir.create(params$outdir, showWarnings = FALSE, recursive = TRUE)
+
+## One theme for the whole document. Nothing below 12 pt, and every figure is
+## drawn at 7 inches wide or less, so the text keeps a generous share of the
+## canvas rather than shrinking when the figure is scaled onto a page.
+BASE_PT <- 12                  # smallest type anywhere in a figure
+GEOM_PT <- BASE_PT / .pt       # the same size for geom_text(), in mm
+
+theme_ctg <- theme_bw(base_size = BASE_PT) +
+  theme(plot.title    = element_text(face = "bold", size = BASE_PT + 1.5),
+        plot.subtitle = element_text(size = BASE_PT, colour = "grey30"),
+        axis.title    = element_text(size = BASE_PT),
+        axis.text     = element_text(size = BASE_PT),
+        strip.text    = element_text(size = BASE_PT, face = "bold"),
+        legend.text   = element_text(size = BASE_PT),
+        legend.title  = element_blank(),
+        plot.title.position = "plot",
+        legend.key.size = unit(0.9, "lines"),
+        plot.margin   = margin(4, 6, 4, 4),
+        panel.grid.minor = element_blank())
+
+theme_ctg_flat <- theme_ctg + theme(panel.grid = element_blank())
+theme_set(theme_ctg)
 ```
 
 # Design
@@ -83,8 +108,8 @@ dir.create(params$outdir, showWarnings = FALSE, recursive = TRUE)
 
 ```{r donors}
 donors <- tibble(
-  donor_id    = c("HH-1071", "HH-1088", "HH-1122", "HH-1154",
-                  "HH-1188", "HH-1204", "HH-1263", "HH-1310"),
+  donor_id    = c("HH1", "HH2", "HH3", "HH4",
+                  "HH5", "HH6", "HH7", "HH8"),
   donor_sex   = c("F", "M", "F", "M", "M", "F", "F", "M"),
   donor_age   = c(34L, 52L, 61L, 45L, 29L, 58L, 41L, 66L),
   vehicle_rlu = c(2.10, 1.68, 2.44, 1.92, 2.28, 1.55, 2.02, 1.79) * 1e6,
@@ -136,30 +161,26 @@ plate_design <- wellIndex2position(1:96, format = "96") %>%
 count(plate_design, well_type)
 ```
 
-```{r plate-layout-view, fig.width=11, fig.height=4.4}
+```{r plate-layout-view, fig.width=7, fig.height=3.6}
 layout_cols <- c("test article" = "grey92", "vehicle" = "#cfe3f5",
                  "lysis control" = "#f7cfcb", "no-cell blank" = "#f3e2b0")
 
 p_layout <- plate_design %>%
   mutate(label = case_when(
-    well_type == "test article"  ~ format(conc_uM, trim = TRUE, drop0trailing = TRUE),
+    well_type == "test article"  ~ format(conc_uM, trim = TRUE,
+                                          drop0trailing = TRUE,
+                                          scientific = FALSE),
     well_type == "lysis control" ~ "dig",
     well_type == "vehicle"       ~ "veh",
     TRUE                         ~ "blk")) %>%
   ggplot(aes(x = factor(column), y = fct_rev(row))) +
   geom_tile(aes(fill = well_type), colour = "white", linewidth = 1.1) +
-  geom_text(aes(label = label), size = 4.5) +
+  geom_text(aes(label = label), size = GEOM_PT * 0.72) +
   scale_fill_manual(values = layout_cols, name = NULL) +
   labs(title = "Plate layout — one compound per plate, eight replicate rows",
        subtitle = "numbers are concentrations in µM",
        x = "Column", y = "Row") +
-  theme_minimal(base_size = 15) +
-  theme(plot.title = element_text(face = "bold", size = 17),
-        plot.subtitle = element_text(size = 14),
-        axis.text = element_text(size = 14),
-        legend.text = element_text(size = 14),
-        legend.position = "bottom",
-        panel.grid = element_blank())
+  theme_ctg_flat + theme(legend.position = "bottom")
 
 p_layout
 ```
@@ -188,33 +209,26 @@ schedule <- bind_rows(
   mutate(design   = factor(design, levels = DESIGNS),
          weekday  = factor(weekday, levels = c("Friday", "Monday")),
          plate_id = sprintf("%s_%s_%s", substr(as.character(design), 1, 1),
-                            str_remove(as.character(donor_id), "HH-"),
+                            str_remove(as.character(donor_id), "HH"),
                             str_remove(compound, "CPD-")))
 
 schedule %>% count(design, compound, weekday)
 ```
 
-```{r design-view, fig.width=11, fig.height=4.2}
+```{r design-view, fig.width=7, fig.height=4}
 day_cols <- c("Friday" = "#e07b39", "Monday" = "#4c8fbd")
 
 p_design <- schedule %>%
   ggplot(aes(x = compound, y = fct_rev(donor_id), fill = weekday)) +
   geom_tile(colour = "white", linewidth = 1.4) +
-  geom_text(aes(label = str_sub(weekday, 1, 3)), size = 4.8, colour = "white",
-            fontface = "bold") +
+  geom_text(aes(label = str_sub(weekday, 1, 3)), size = GEOM_PT * 0.85,
+            colour = "white", fontface = "bold") +
   facet_wrap(~ design) +
   scale_fill_manual(values = day_cols, name = NULL) +
   labs(title = "Run-day allocation — the only difference between the designs",
        subtitle = "left: day balanced across compounds · right: day perfectly aliased with compound",
        x = NULL, y = "Donor") +
-  theme_minimal(base_size = 15) +
-  theme(plot.title = element_text(face = "bold", size = 17),
-        plot.subtitle = element_text(size = 14),
-        strip.text = element_text(size = 16, face = "bold"),
-        axis.text = element_text(size = 14),
-        legend.text = element_text(size = 14),
-        legend.position = "bottom",
-        panel.grid = element_blank())
+  theme_ctg_flat + theme(legend.position = "bottom")
 
 p_design
 ```
@@ -329,7 +343,7 @@ glimpse(ctg)
 This is the diagnostic you would actually run — it needs no compound data, and
 it works identically in both designs.
 
-```{r vehicle-diagnostic, fig.width=10, fig.height=5}
+```{r vehicle-diagnostic, fig.width=7, fig.height=4}
 vehicle_summary <- ctg %>%
   filter(well_type == "vehicle", !is_edge, design == DESIGNS[1]) %>%
   group_by(weekday) %>%
@@ -342,15 +356,12 @@ p_vehicle <- ctg %>%
   filter(well_type == "vehicle", !is_edge, design == DESIGNS[1]) %>%
   ggplot(aes(weekday, raw_rlu / 1e6, fill = weekday)) +
   geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.7) +
-  geom_jitter(width = 0.12, size = 2.2, alpha = 0.7) +
+  geom_jitter(width = 0.12, size = 1.6, alpha = 0.7) +
   scale_fill_manual(values = day_cols, guide = "none") +
   labs(title = "Vehicle wells by run day",
        subtitle = "the reference the whole plate is normalised against",
        x = NULL, y = expression("Raw signal (10"^6~"RLU)")) +
-  theme_bw(base_size = 15) +
-  theme(plot.title = element_text(face = "bold", size = 17),
-        plot.subtitle = element_text(size = 14),
-        axis.text = element_text(size = 14))
+  theme_ctg
 
 p_vehicle
 ```
@@ -401,7 +412,7 @@ plate_qc %>%
   arrange(qc_pass, plate_id)
 ```
 
-```{r qc-figure, fig.width=12, fig.height=5}
+```{r qc-figure, fig.width=7, fig.height=6.4}
 p_qc <- plate_qc %>%
   filter(design == DESIGNS[1]) %>%
   pivot_longer(c(z_prime, vehicle_cv, vehicle_rel),
@@ -409,26 +420,21 @@ p_qc <- plate_qc %>%
   mutate(metric = recode(metric,
                          z_prime     = "Z' factor",
                          vehicle_cv  = "Vehicle CV",
-                         vehicle_rel = "Vehicle signal / study median")) %>%
+                         vehicle_rel = "Vehicle / median")) %>%
   ggplot(aes(x = fct_reorder(plate_id, value), y = value, fill = qc_pass)) +
   geom_col() +
   geom_hline(data = tibble(metric = c("Z' factor", "Vehicle CV",
-                                      "Vehicle signal / study median"),
+                                      "Vehicle / median"),
                            yint = c(0.5, 0.15, 0.5)),
              aes(yintercept = yint), linetype = "dashed", colour = "grey30") +
   facet_wrap(~ metric, scales = "free_x") +
   coord_flip() +
   scale_fill_manual(values = c(`TRUE` = "#3b7a57", `FALSE` = "#a33"),
-                    name = "QC pass") +
+                    labels = c(`TRUE` = "QC pass", `FALSE` = "QC fail")) +
   labs(title = "Pre-specified plate QC (blocked design)",
        subtitle = "control wells only - the compound data are never inspected at this stage",
        x = NULL, y = NULL) +
-  theme_bw(base_size = 15) +
-  theme(plot.title = element_text(face = "bold", size = 17),
-        plot.subtitle = element_text(size = 14),
-        strip.text = element_text(size = 14, face = "bold"),
-        axis.text = element_text(size = 12),
-        legend.text = element_text(size = 14))
+  theme_ctg
 
 p_qc
 ```
@@ -603,17 +609,7 @@ alias(fit_confounded)
 
 # Figures
 
-```{r results-figure, fig.width=17, fig.height=11}
-theme_ctg <- theme_bw(base_size = 15) +
-  theme(plot.title = element_text(face = "bold", size = 17),
-        plot.subtitle = element_text(size = 14),
-        axis.title = element_text(size = 16),
-        axis.text = element_text(size = 14),
-        strip.text = element_text(size = 15, face = "bold"),
-        legend.text = element_text(size = 14),
-        legend.title = element_blank(),
-        panel.grid.minor = element_blank())
-
+```{r results-figure, fig.width=7, fig.height=17.5}
 cpd_cols <- c("CPD-A" = "#1f6fb4", "CPD-B" = "#c1443b")
 
 grid <- tibble(logc = seq(log10(0.2), log10(1500), length.out = 200))
@@ -635,7 +631,7 @@ pA <- ggplot(curves, aes(conc_uM, viability, colour = compound)) +
   scale_colour_manual(values = cpd_cols) +
   coord_cartesian(ylim = c(-5, 118)) +
   labs(title = "A  Concentration–response by design",
-       subtitle = "in the confounded design every CPD-A curve tops out below 100%",
+       subtitle = "confounded: every CPD-A curve tops out below 100%",
        x = "Concentration (µM)", y = "ATP (% of vehicle)") +
   theme_ctg + theme(legend.position = "bottom")
 
@@ -643,12 +639,12 @@ pA <- ggplot(curves, aes(conc_uM, viability, colour = compound)) +
 pB <- ic50_qc %>%
   ggplot(aes(ic50_true, ic50_abs, colour = compound, shape = weekday)) +
   geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
-  geom_point(size = 3.6, alpha = 0.9) +
+  geom_point(size = 2, alpha = 0.9) +
   facet_wrap(~ design) +
   scale_x_log10() + scale_y_log10() +
   scale_colour_manual(values = cpd_cols) +
   labs(title = "B  Recovered vs simulated IC50 (absolute)",
-       subtitle = "points below the diagonal are biased toward apparent toxicity",
+       subtitle = "below the diagonal = biased toward apparent toxicity",
        x = expression("Simulated IC"[50]~"(µM)"),
        y = expression("Fitted IC"[50]~"(µM)")) +
   theme_ctg + theme(legend.position = "bottom")
@@ -659,12 +655,12 @@ pC <- separation %>%
   geom_hline(yintercept = true_sep, linetype = "dashed", colour = "grey30",
              linewidth = 0.9) +
   geom_line(aes(group = donor_id), colour = "grey75", linewidth = 0.6) +
-  geom_point(aes(colour = design), size = 4, show.legend = FALSE) +
+  geom_point(aes(colour = design), size = 2.4, show.legend = FALSE) +
   stat_summary(fun = gm, fun.min = gm, fun.max = gm, geom = "crossbar",
                width = 0.4, linewidth = 0.8, colour = "grey20") +
   annotate("text", x = 0.6, y = true_sep * 1.06,
            label = sprintf("true separation %.0f×", true_sep),
-           hjust = 0, size = 5, colour = "grey25") +
+           hjust = 0, size = GEOM_PT, colour = "grey25") +
   scale_colour_manual(values = setNames(c("#3b7a57", "#a33"), DESIGNS)) +
   scale_y_log10() +
   labs(title = "C  Apparent CPD-B / CPD-A separation, per donor",
@@ -684,27 +680,27 @@ pD <- ic50_qc %>%
   scale_fill_manual(values = day_cols) +
   scale_y_continuous(labels = scales::percent) +
   labs(title = "D  Bias of the two IC50 definitions",
-       subtitle = "the relative IC50 absorbs the vehicle shift into the upper asymptote",
+       subtitle = "the relative IC50 absorbs the shift into the upper asymptote",
        x = NULL, y = "Relative bias vs simulated truth") +
   theme_ctg + theme(legend.position = "bottom")
 
-fig <- (pA | pB) / (pC | pD)
+fig <- pA / pB / pC / pD
 fig
 ```
 
 ```{r export-figures}
 openFileDevice(file.path(params$outdir, "ctg_weekday_results.pdf"),
-               width = 17, height = 11)
+               width = 7, height = 17.5)
 print(fig)
 closeFileDevice()
 
 openFileDevice(file.path(params$outdir, "ctg_weekday_design.pdf"),
-               width = 11, height = 4.2)
+               width = 7, height = 4)
 print(p_design)
 closeFileDevice()
 
 openFileDevice(file.path(params$outdir, "ctg_plate_layout.pdf"),
-               width = 11, height = 4.4)
+               width = 7, height = 3.6)
 print(p_layout)
 closeFileDevice()
 ```
@@ -931,16 +927,16 @@ tibble(estimator = c("unweighted", "inverse-variance weighted"),
 
 # Figures for the perturbations
 
-```{r perturbation-figure, fig.width=17, fig.height=11}
+```{r perturbation-figure, fig.width=7, fig.height=17.5}
 ## E: variance is not constant
 pE <- rep_stats %>%
   ggplot(aes(mean_viab, sd_viab, colour = lot)) +
-  geom_point(size = 2.6, alpha = 0.75) +
+  geom_point(size = 1.7, alpha = 0.75) +
   geom_smooth(method = "loess", se = FALSE, linewidth = 1.1, span = 1) +
   scale_colour_manual(values = c("high-variance lot" = "#c1443b",
                                  "standard lot" = "#1f6fb4")) +
   labs(title = "E  Replicate spread depends on lot and on signal level",
-       subtitle = "equal-weight fitting treats all of these points as equally informative",
+       subtitle = "equal-weight fitting treats all points as equally informative",
        x = "Mean viability of the condition (% of vehicle)",
        y = "SD across replicate wells") +
   theme_ctg + theme(legend.position = "bottom")
@@ -954,7 +950,7 @@ pF <- scenarios %>%
   ggplot(aes(scenario, ratio)) +
   geom_hline(yintercept = true_sep, linetype = "dashed", colour = "grey30",
              linewidth = 0.9) +
-  geom_point(size = 3.4, alpha = 0.8, colour = "#3b7a57") +
+  geom_point(size = 2.2, alpha = 0.8, colour = "#3b7a57") +
   stat_summary(fun = gm, fun.min = gm, fun.max = gm, geom = "crossbar",
                width = 0.4, colour = "grey20") +
   scale_y_log10() +
@@ -962,7 +958,7 @@ pF <- scenarios %>%
        subtitle = sprintf("dashed line = true %.0f-fold separation", true_sep),
        x = NULL, y = "CPD-B / CPD-A (per donor)") +
   theme_ctg +
-  theme(axis.text.x = element_text(angle = 20, hjust = 1, size = 13))
+  theme(axis.text.x = element_text(angle = 20, hjust = 1))
 
 ## G: the sensitive donor in context
 pG <- blocked %>%
@@ -972,15 +968,15 @@ pG <- blocked %>%
     TRUE ~ "other donors")) %>%
   ggplot(aes(x = fct_reorder(donor_id, ic50_rel), y = ic50_rel,
              colour = compound, shape = group)) +
-  geom_point(size = 4.2) +
+  geom_point(size = 2.4) +
   scale_shape_manual(values = c("sensitive donor" = 17, "other donors" = 16)) +
   scale_colour_manual(values = cpd_cols) +
   scale_y_log10() +
   labs(title = "G  Donor sensitivity is real, and it is correlated across compounds",
-       subtitle = "the low donor is low for both compounds, so the ratio is unaffected",
+       subtitle = "low for both compounds, so the ratio is unaffected",
        x = "Donor", y = expression("Relative IC"[50]~"(µM)")) +
   theme_ctg +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 13),
+  theme(axis.text.x = element_text(angle = 45, hjust = 1),
         legend.position = "bottom")
 
 ## H: variance decomposition
@@ -997,18 +993,18 @@ pH <- var_decomp %>%
        x = NULL, y = expression("Variance of log"[10]~"IC"[50])) +
   theme_ctg + theme(legend.position = "bottom")
 
-fig2 <- (pE | pF) / (pG | pH)
+fig2 <- pE / pF / pG / pH
 fig2
 ```
 
 ```{r export-perturbation-figure}
 openFileDevice(file.path(params$outdir, "ctg_perturbations.pdf"),
-               width = 17, height = 11)
+               width = 7, height = 17.5)
 print(fig2)
 closeFileDevice()
 
 openFileDevice(file.path(params$outdir, "ctg_plate_qc.pdf"),
-               width = 12, height = 5)
+               width = 7, height = 6.4)
 print(p_qc)
 closeFileDevice()
 ```
