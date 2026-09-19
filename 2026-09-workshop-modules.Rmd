@@ -1,0 +1,1599 @@
+---
+title: "Statistical thinking for experimental scientists"
+subtitle: "Ten modules around one small CellTiter-Glo dataset"
+author: "Jitao David Zhang"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    toc_depth: 2
+    number_sections: false
+    code_folding: hide
+    fig_width: 10
+    fig_height: 5.5
+params:
+  seed: 20260919
+  n_sim: 2000          # Monte Carlo replicates for modules 6 and 8
+  outdir: "output/workshop"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center", dev = "png", dpi = 150)
+```
+
+```{r libraries}
+library(tidyverse)
+library(patchwork)
+library(ribiosUtils)   # ofactor, percentage
+library(ribiosPlot)    # openFileDevice, closeFileDevice
+
+source("R/simulate_workshop_data.R")
+set.seed(params$seed)
+dir.create(params$outdir, showWarnings = FALSE, recursive = TRUE)
+
+theme_ws <- theme_bw(base_size = 16) +
+  theme(plot.title    = element_text(face = "bold", size = 18),
+        plot.subtitle = element_text(size = 15, colour = "grey30"),
+        axis.title    = element_text(size = 16),
+        axis.text     = element_text(size = 14),
+        strip.text    = element_text(size = 15, face = "bold"),
+        legend.text   = element_text(size = 14),
+        legend.title  = element_blank(),
+        panel.grid.minor = element_blank())
+theme_set(theme_ws)
+
+cpd_cols <- c("CPD-A" = "#1f6fb4", "CPD-B" = "#c1443b")
+day_cols <- c("Friday" = "#e07b39", "Monday" = "#4c8fbd")
+ok_cols  <- c("yes" = "#3b7a57", "no" = "#a33", "maybe" = "#d9a441")
+
+## every module exports the data it uses, so participants can reopen it
+## afterwards in Excel, Prism, or with an LLM
+.manifest <- tibble(file = character(), rows = integer(), what = character())
+
+## keep exported numbers readable without corrupting raw counts or p-values
+tidy_num <- function(x) {
+  if (!is.double(x)) return(x)
+  nz <- abs(x[is.finite(x) & x != 0])
+  if (length(nz) && min(nz) < 1e-3) signif(x, 3) else round(x, 3)
+}
+
+export_data <- function(x, name, what) {
+  path <- file.path(params$outdir, paste0(name, ".csv"))
+  write_csv(mutate(x, across(where(is.double), tidy_num)), path)
+  .manifest <<- add_row(.manifest, file = basename(path),
+                        rows = nrow(x), what = what)
+  invisible(x)
+}
+```
+
+```{r the-data}
+sim   <- simulate_workshop_data(seed = params$seed)
+viab  <- sim$viab                 # 48 wells, the dataset the workshop uses
+dm    <- donor_means(viab)        # 16 lot-level means, the analysis unit
+thr   <- sim$thresholds
+MCID  <- thr$mcid_pp              # relevance threshold, in percentage points
+CONC  <- sim$params$screen_conc
+```
+
+# How to use this notebook
+
+Every module follows the same five-step loop, and the loop is the point of
+the workshop:
+
+> **Question → Design → Data → Analysis and uncertainty → Decision**
+
+One dataset carries all ten modules. It is synthetic, so the true answer is
+known and every claim in here can be checked against it.
+
+**The experiment.** Two compounds from the same project, CPD-A and CPD-B, are
+tested for cytotoxicity in primary human hepatocytes with the CellTiter-Glo
+ATP readout.
+
+| | |
+|---|---|
+| Independent units | 8 hepatocyte lots (donors) |
+| Conditions | CPD-A and CPD-B, both in every lot |
+| Technical replicates | 3 wells per lot × compound |
+| Readout concentration | `r CONC` µM, one point on the curve |
+| Run days | Friday and Monday |
+| Total measurements | 48 |
+
+Three things are hidden in it, and each surfaces in the module where it
+matters: a run-day effect that lives in the vehicle reference, one well with
+an air bubble, and one lot that is genuinely more sensitive than the rest.
+
+> **A note on the numbers.** This notebook is the participants' document. A
+> companion document, `2026-09-statistical-thinking.Rmd`, works the same assay
+> at full analyst depth: 96-well plates, eight concentrations, four-parameter
+> logistic fits, plate QC, weighted regression and variance decomposition.
+> Modules 4 and 7 point into it. The two documents use the same compounds and
+> the same day effect but are simulated separately, so the individual numbers
+> differ.
+
+---
+
+# Module 1 — What question are we actually asking?
+
+### Story
+
+A project team wants to know whether to drop CPD-B. Someone says "run the
+viability assay and tell me if it's significant". That instruction cannot be
+carried out, because it does not say what would count as an answer.
+
+Five questions turn it into an experiment:
+
+* Measurements **of what**? — ATP content, as a proxy for viable cells
+* From **whom or what**? — primary human hepatocytes, one lot per donor
+* Under **which conditions**? — `r CONC` µM, 24 h, 0.1% DMSO vehicle
+* What **population** do we want to speak about? — human hepatocyte lots in
+  general, not these eight
+* What **decision** does this inform? — whether CPD-B needs a dedicated
+  safety study
+
+### The sentence every experiment should be able to complete
+
+> I want to compare **viability at `r CONC` µM** in **primary human
+> hepatocyte lots** because I need to decide **whether CPD-B is materially
+> less cytotoxic than CPD-A**.
+
+### The threshold comes before the data
+
+The team agrees, before seeing anything, that a **`r thr$mcid_fold`-fold shift
+in potency** is what they would act on. That is a scientific judgement, not a
+statistical one — no analysis can supply it.
+
+The assay does not report potency, it reports viability at one concentration.
+So the threshold has to be translated. The translation is not a single number,
+because the same potency shift produces a different viability gap depending on
+where a lot sits on the curve.
+
+```{r m1-threshold, fig.width=12, fig.height=5}
+curve_df <- expand_grid(
+    series = c("CPD-A reference", "a 3-fold less potent compound"),
+    conc   = 10^seq(log10(0.3), log10(1000), length.out = 300)) %>%
+  mutate(ic50 = if_else(series == "CPD-A reference",
+                        sim$params$ic50_A,
+                        sim$params$ic50_A * thr$mcid_fold),
+         viability = 100 * hill_viability(conc, ic50, sim$params$hill_A))
+
+v_lo <- 100 * hill_viability(CONC, sim$params$ic50_A, sim$params$hill_A)
+v_hi <- 100 * hill_viability(CONC, sim$params$ic50_A * thr$mcid_fold,
+                             sim$params$hill_A)
+
+p1a <- ggplot(curve_df, aes(conc, viability, colour = series)) +
+  geom_line(linewidth = 1.3) +
+  annotate("segment", x = CONC, xend = CONC, y = v_lo, yend = v_hi,
+           linewidth = 1.2, colour = "grey25",
+           arrow = arrow(ends = "both", length = unit(0.18, "cm"))) +
+  annotate("label", x = CONC, y = (v_lo + v_hi) / 2,
+           label = sprintf("%.0f pp", v_hi - v_lo), size = 5) +
+  geom_vline(xintercept = CONC, linetype = "dotted", colour = "grey40") +
+  scale_x_log10() +
+  scale_colour_manual(values = c("CPD-A reference" = "#1f6fb4",
+                                 "a 3-fold less potent compound" = "#7a3b8f")) +
+  labs(title = "A  A 3-fold potency shift, seen at one concentration",
+       subtitle = sprintf("read out at %.1f µM", CONC),
+       x = "Concentration (µM)", y = "ATP (% of vehicle)") +
+  theme(legend.position = "bottom")
+
+p1b <- sim$mcid_by_donor %>%
+  ggplot(aes(fct_reorder(donor_id, mcid_pp), mcid_pp)) +
+  geom_col(fill = "#7a3b8f", width = 0.7) +
+  geom_hline(yintercept = MCID, linetype = "dashed", linewidth = 1) +
+  geom_hline(yintercept = thr$mcid_pp_naive, linetype = "dotted",
+             colour = "grey35", linewidth = 1) +
+  annotate("text", x = 0.7, y = MCID + 2, hjust = 0, size = 5,
+           label = sprintf("average: %.1f pp", MCID)) +
+  annotate("text", x = 0.7, y = thr$mcid_pp_naive + 2, hjust = 0, size = 5,
+           colour = "grey35",
+           label = sprintf("if you translate at one\n'typical' lot: %.1f pp",
+                           thr$mcid_pp_naive)) +
+  labs(title = "B  The same threshold, lot by lot",
+       subtitle = "a lot sitting at the top or bottom of the curve shows a smaller gap",
+       x = NULL, y = "Viability gap equal to a 3-fold shift (pp)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12))
+
+p1a | p1b
+```
+
+So the pre-registered rule becomes: **we will act if the average viability
+difference between the compounds exceeds `r round(MCID, 1)` percentage
+points.** Note that translating at a single "typical" lot would have given
+`r round(thr$mcid_pp_naive, 1)` pp — over half again as large, and it would
+have made the study look like a failure. A threshold has to be expressed on
+the same scale, and in the same units, as the estimate it will be compared
+with.
+
+```{r m1-export}
+export_data(sim$mcid_by_donor, "m01_relevance_threshold",
+            "the 3-fold rule translated into a viability gap, lot by lot")
+```
+
+### Your turn (5 min)
+
+Complete the sentence for one of your own experiments:
+
+> I want to estimate/compare ______ in ______ because I need to decide ______.
+
+Then name the number that would make you act. If you cannot, the experiment
+is not ready to be designed.
+
+### Takeaway
+
+Statistics cannot rescue an experiment whose question was never defined. The
+threshold is a scientific decision, it is fixed before the data, and it must
+be carried onto the scale you will actually measure.
+
+---
+
+# Module 2 — Variation: what does one number tell us?
+
+### Story
+
+The first lot comes off the plate reader. Six numbers. What can be said?
+
+```{r m2-reveal}
+one_lot <- viab %>%
+  filter(donor_id == "HH-1071") %>%
+  select(donor_id, compound, replicate, raw_rlu, viability_pct)
+
+export_data(one_lot, "m02_one_lot",
+            "six wells from a single hepatocyte lot, both compounds")
+one_lot
+```
+
+### Show the points, not a bar
+
+```{r m2-dots, fig.width=11, fig.height=5}
+p2a <- one_lot %>%
+  ggplot(aes(compound, viability_pct, colour = compound)) +
+  stat_summary(fun = mean, geom = "col", fill = "grey85", colour = NA,
+               width = 0.6) +
+  stat_summary(fun.data = mean_se, geom = "errorbar", width = 0.2,
+               colour = "grey30") +
+  scale_colour_manual(values = cpd_cols, guide = "none") +
+  labs(title = "What a bar chart shows", subtitle = "two numbers and an error bar",
+       x = NULL, y = "Viability (% of vehicle)") +
+  coord_cartesian(ylim = c(0, 80))
+
+p2b <- one_lot %>%
+  ggplot(aes(compound, viability_pct, colour = compound)) +
+  geom_point(size = 5, alpha = 0.85,
+             position = position_jitter(width = 0.08, height = 0, seed = 1)) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.45,
+               colour = "grey25", linewidth = 0.6) +
+  scale_colour_manual(values = cpd_cols, guide = "none") +
+  labs(title = "What the data show", subtitle = "three wells per compound, and their mean",
+       x = NULL, y = NULL) +
+  coord_cartesian(ylim = c(0, 80))
+
+p2a | p2b
+```
+
+The bar chart is not wrong. It is simply compatible with almost any underlying
+data, which is why it is a poor default.
+
+### The mean moves every time
+
+Nothing about the lot or the compound changes below. The same measurement
+process is repeated twenty times, three wells at a time.
+
+```{r m2-mean-moves, fig.width=11, fig.height=5.5}
+true_v <- 100 * hill_viability(CONC,
+                               sim$truth$ic50_true[sim$truth$donor_id == "HH-1071" &
+                                                   sim$truth$compound == "CPD-B"],
+                               sim$params$hill_A)
+tech_cv <- 0.05 + 0.12 * (1 - true_v / 100)
+
+repeats <- tibble(experiment = rep(1:20, each = 3)) %>%
+  mutate(well = rep(1:3, 20),
+         viability = true_v * (1 + rnorm(n(), 0, tech_cv)))
+
+rep_means <- repeats %>%
+  group_by(experiment) %>%
+  summarise(mean_viability = mean(viability), .groups = "drop")
+
+ggplot(repeats, aes(experiment, viability)) +
+  geom_hline(yintercept = true_v, linetype = "dashed", colour = "#c1443b",
+             linewidth = 1) +
+  geom_point(colour = "grey55", size = 3, alpha = 0.8) +
+  geom_point(data = rep_means, aes(y = mean_viability), size = 5,
+             colour = "#1f6fb4") +
+  geom_line(data = rep_means, aes(y = mean_viability), colour = "#1f6fb4",
+            linewidth = 0.9) +
+  annotate("text", x = 20.4, y = true_v, hjust = 1, vjust = -0.8, size = 5,
+           colour = "#c1443b", label = "the unchanging truth") +
+  labs(title = "Twenty repeats of one unchanged experiment",
+       subtitle = "grey: individual wells   ·   blue: the mean of each repeat",
+       x = "Repeat of the experiment", y = "Viability (% of vehicle)")
+```
+
+The truth is a fixed line. Every mean sits somewhere else. That gap is
+**sampling uncertainty**, and it exists even when the experiment is perfect.
+A confidence interval, later, is nothing more than an attempt to say how wide
+this cloud is — from a single experiment.
+
+### Not all variation is the same
+
+```{r m2-taxonomy, fig.width=12, fig.height=5}
+n_lots <- 8
+base   <- 100 * hill_viability(CONC, sim$params$ic50_A, sim$params$hill_A)
+lot_shift <- 100 * hill_viability(
+  CONC, sim$params$ic50_A * 10^rnorm(n_lots, 0, log10(sim$params$donor_gsd)),
+  sim$params$hill_A)
+
+taxonomy <- bind_rows(
+  tibble(layer = "1. measurement only",
+         value = base * (1 + rnorm(n_lots * 3, 0, 0.06))),
+  tibble(layer = "2. + lot biology",
+         value = rep(lot_shift, each = 3) * (1 + rnorm(n_lots * 3, 0, 0.06))),
+  tibble(layer = "3. + a run-day shift",
+         value = rep(lot_shift, each = 3) * (1 + rnorm(n_lots * 3, 0, 0.06)) *
+                 rep(c(1, 1 / 1.2), each = n_lots * 3 / 2))
+) %>%
+  mutate(layer = ofactor(layer))
+
+ggplot(taxonomy, aes(layer, value, colour = layer)) +
+  geom_point(position = position_jitter(width = 0.14, seed = 3),
+             size = 3.4, alpha = 0.8) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, colour = "grey25") +
+  scale_colour_brewer(palette = "Dark2", guide = "none") +
+  labs(title = "The same 24 wells, with variance sources switched on one at a time",
+       subtitle = "spread is not one thing, and the three layers are not equally fixable",
+       x = NULL, y = "Viability (% of vehicle)")
+```
+
+Four kinds, and they call for four different responses:
+
+| Kind | Example here | What to do |
+|---|---|---|
+| **Wanted** | the compound effect | measure it |
+| **Unavoidable** | well-to-well pipetting | replicate, then average |
+| **Controllable** | run day, plate, operator | block it, or standardise it |
+| **Confounding** | run day that tracks compound | redesign — it cannot be fixed later |
+
+### Bias and variance
+
+```{r m2-target, fig.width=11, fig.height=10}
+target_data <- expand_grid(
+    bias     = c("unbiased", "biased"),
+    variance = c("low variance", "high variance")) %>%
+  mutate(shots = pmap(list(bias, variance), function(b, v) {
+    ctr <- if (b == "biased") c(1.45, 1.05) else c(0, 0)
+    s   <- if (v == "high variance") 1.15 else 0.32
+    tibble(x = rnorm(24, ctr[1], s), y = rnorm(24, ctr[2], s))
+  })) %>%
+  unnest(shots) %>%
+  mutate(bias     = factor(bias, levels = c("unbiased", "biased")),
+         variance = factor(variance, levels = c("low variance", "high variance")))
+
+## target rings, drawn as polygons so no extra package is needed
+rings <- expand_grid(r = c(0.6, 1.2, 1.8, 2.4),
+                     theta = seq(0, 2 * pi, length.out = 120)) %>%
+  mutate(x = r * cos(theta), y = r * sin(theta))
+
+ggplot(target_data) +
+  geom_path(data = rings, aes(x, y, group = r), colour = "grey75") +
+  geom_point(aes(x, y), colour = "#c1443b", size = 2.8, alpha = 0.85) +
+  geom_point(aes(x = 0, y = 0), colour = "grey40", size = 2, shape = 3) +
+  facet_grid(variance ~ bias) +
+  coord_equal(xlim = c(-2.6, 2.6), ylim = c(-2.6, 2.6)) +
+  labs(title = "Bias is consistently wrong. Variance is inconsistently noisy.",
+       subtitle = "the cross is the truth; reducing variance is only a gain if it does not buy bias",
+       x = NULL, y = NULL) +
+  theme(axis.text = element_blank(), axis.ticks = element_blank(),
+        panel.grid = element_blank())
+```
+
+Two scenarios to argue about:
+
+* **Scenario A.** Every control sample is pipetted with pipette A, every
+  treated sample with pipette B.
+* **Scenario B.** Within one experiment, every replicate uses a different
+  consumable batch, "to make it representative".
+
+> Which one makes it hard to know whether the treatment caused the difference?
+> Which one makes a real effect harder to detect?
+
+### Your turn (5 min)
+
+Name one source of variability in your own assay, and classify it: wanted,
+unavoidable, controllable, or confounding.
+
+### Takeaway
+
+Variation is not a sign of a bad experiment. Some of it is the signal, some is
+the price of measuring, some is a design choice you still have, and some is a
+design mistake you no longer have.
+
+---
+
+# Module 3 — What is *n*?
+
+### Dataset reveal
+
+All 48 measurements are now on the table.
+
+```{r m3-reveal}
+export_data(viab %>% select(donor_id, donor_sex, donor_age, compound, weekday,
+                            plate_id, well, replicate, conc_uM, raw_rlu,
+                            viability_pct),
+            "m03_all_wells_long",
+            "the full 48-well dataset, one row per well (long format)")
+
+viab %>%
+  select(donor_id, compound, weekday, replicate, viability_pct) %>%
+  head(12)
+```
+
+> We have 48 numbers. What is *n*? 48? 16? 8? Something else?
+
+### Two kinds of replicate
+
+**Technical replicate** — a repeated measurement made to characterise the
+*measurement* process. Three wells from one lot tell you how reproducibly you
+can pipette and read that lot.
+
+**Biological (independent) replicate** — an independently sampled unit that
+carries new information about the *population*. A second hepatocyte lot is a
+second donor, a second liver, a second draw from the population you want to
+speak about.
+
+Three wells from one lot are not three lots. Averaging the three wells gives
+you a better measurement of **that one lot**; it does not give you a second
+lot.
+
+Here, the independent experimental unit is the **hepatocyte lot**: *n* = 8.
+
+### Pseudoreplication, made visible
+
+The same comparison, run twice. Nothing changes except what is treated as
+independent.
+
+```{r m3-pseudoreplication}
+wrong <- t.test(viability_pct ~ compound, data = viab)              # 48 wells
+right <- t.test(viability ~ compound, data = dm)                    # 8 lots
+
+## both tests are CPD-A minus CPD-B; flip everything to CPD-B minus CPD-A
+pseudo <- tibble(
+  analysis = c("wells treated as independent (n = 48)",
+               "lots treated as independent (n = 8)"),
+  n_per_group = c(24, 8),
+  estimate_pp = -c(diff(rev(wrong$estimate)), diff(rev(right$estimate))),
+  ci_low  = c(-wrong$conf.int[2], -right$conf.int[2]),
+  ci_high = c(-wrong$conf.int[1], -right$conf.int[1]),
+  p_value = c(wrong$p.value, right$p.value)) %>%
+  mutate(ci_width = ci_high - ci_low,
+         across(c(estimate_pp, ci_low, ci_high, ci_width), ~ round(.x, 1)),
+         p_value = signif(p_value, 3))
+
+export_data(pseudo, "m03_pseudoreplication",
+            "the same comparison analysed at the well level and at the lot level")
+pseudo
+```
+
+The point estimate is identical to the first decimal. The p-value is about
+`r round(pseudo$p_value[2] / pseudo$p_value[1])` times **smaller** when wells
+are counted as independent, and the interval is about half as wide. Counting
+wells adds no information about lots; it only makes the software believe there
+is more of it. The extra confidence is manufactured.
+
+One honest caveat, visible in the table. The pseudoreplicated interval here is
+not just narrower — it happens to sit close to the answer we will reach in
+Module 5 by doing things properly. That is luck, not vindication: ignoring the
+lot structure double-counts wells, which narrows the interval, while ignoring
+the pairing widens it, and on this dataset the two errors partly cancel. An
+analysis that is wrong for two reasons at once can still land in a plausible
+place. What it cannot do is *tell you* that it has.
+
+### Twelve measurements, two ways to spend them
+
+```{r m3-designs, fig.width=11, fig.height=5.5}
+gp <- sim$params
+
+## Experiment A: 12 lots x 1 well   |   Experiment B: 3 lots x 4 wells
+one_study <- function(n_lots, n_wells) {
+  ic50 <- gp$ic50_A * 10^rnorm(n_lots, 0, log10(gp$donor_gsd))
+  v    <- 100 * hill_viability(gp$screen_conc, ic50, gp$hill_A)
+  cv   <- 0.05 + 0.12 * (1 - v / 100)
+  obs  <- v * (1 + matrix(rnorm(n_lots * n_wells), nrow = n_lots) * cv)
+  lot_means <- rowMeans(obs)
+  tibble(
+    ## how well can we see how much lots differ from each other?
+    sd_between_lots = if (n_lots > 1) sd(lot_means) else NA_real_,
+    ## how well can we see how reproducible the measurement is?
+    sd_within_lot   = if (n_wells > 1) mean(apply(obs, 1, sd)) else NA_real_)
+}
+
+design_cmp <- bind_rows(
+  map_dfr(1:params$n_sim, ~ one_study(12, 1)) %>%
+    mutate(design = "A: 12 lots × 1 well"),
+  map_dfr(1:params$n_sim, ~ one_study(3, 4)) %>%
+    mutate(design = "B: 3 lots × 4 wells"))
+
+export_data(design_cmp %>% group_by(design) %>%
+              summarise(across(everything(),
+                               list(median = ~ median(.x, na.rm = TRUE),
+                                    iqr = ~ IQR(.x, na.rm = TRUE)))),
+            "m03_design_comparison",
+            "12 measurements spent two ways: what each design can estimate")
+
+design_cmp %>%
+  pivot_longer(starts_with("sd_"), names_to = "quantity", values_to = "estimate") %>%
+  mutate(quantity = recode(quantity,
+           sd_between_lots = "spread BETWEEN lots\n(biological)",
+           sd_within_lot   = "spread WITHIN a lot\n(technical)")) %>%
+  ggplot(aes(design, estimate, fill = design)) +
+  geom_violin(alpha = 0.6, colour = NA, na.rm = TRUE) +
+  geom_boxplot(width = 0.14, outlier.shape = NA, na.rm = TRUE) +
+  facet_wrap(~ quantity, scales = "free_y") +
+  scale_fill_manual(values = c("#1f6fb4", "#c1443b"), guide = "none") +
+  labs(title = "Both designs use 12 measurements",
+       subtitle = "empty panel = that design cannot estimate that quantity at all",
+       x = NULL, y = "Estimated SD (pp)") +
+  theme(axis.text.x = element_text(size = 13))
+```
+
+Twelve lots × one well estimates lot-to-lot variation well and technical
+variation not at all. Three lots × four wells does the opposite, and estimates
+lot-to-lot spread from three points — which is barely an estimate. Neither is
+better; they answer different questions. If the question is about *hepatocyte
+lots in general*, spend the measurements on lots.
+
+### Your turn (5 min)
+
+In your last experiment: what was the independent unit? Was the number you
+reported as *n* the number of units, or the number of measurements?
+
+### Takeaway
+
+Variation among biological replicates tells you about the population.
+Variation among technical replicates tells you about your hands and your
+instrument. *n* is the number of independent units, and the analysis has to
+be done at that level.
+
+---
+
+# Module 4 — Design: blocking, randomisation, standardisation
+
+### Story
+
+Sixteen plates cannot be run in one sitting, so the assay is split over Friday
+and Monday. Suppose the scheduler had done the natural thing and run **all
+CPD-A plates on Friday and all CPD-B plates on Monday**.
+
+Something real happened on Friday: the vehicle wells read about
+`r scales::percent(sim$params$friday_vehicle_gain)` higher. Because viability is
+expressed relative to each plate's own vehicle, a shift in the reference
+propagates into every normalised value on that plate.
+
+```{r m4-vehicle, fig.width=11, fig.height=5}
+vehicle_wells <- sim$ctg %>%
+  filter(design == "Blocked", well_type == "vehicle") %>%
+  select(donor_id, compound, weekday, replicate, raw_rlu)
+
+export_data(vehicle_wells, "m04_vehicle_wells",
+            "vehicle (untreated) wells only - where the run-day effect lives")
+
+vehicle_wells %>%
+  ggplot(aes(weekday, raw_rlu / 1e6, fill = weekday)) +
+  geom_boxplot(width = 0.45, alpha = 0.65, outlier.shape = NA) +
+  geom_point(position = position_jitter(width = 0.1, seed = 2), size = 2.6,
+             alpha = 0.7) +
+  scale_fill_manual(values = day_cols, guide = "none") +
+  labs(title = "The run-day effect is visible in the vehicle wells alone",
+       subtitle = "no compound data needed - this diagnostic works before any comparison is made",
+       x = NULL, y = expression("Raw signal (10"^6~"RLU)"))
+```
+
+### The same lots, two schedules
+
+```{r m4-designs, fig.width=12, fig.height=4.6}
+sim$schedule %>%
+  select(donor_id, compound, Blocked = weekday_blocked,
+         Confounded = weekday_confounded) %>%
+  pivot_longer(c(Blocked, Confounded), names_to = "design",
+               values_to = "weekday") %>%
+  export_data("m04_schedules", "run-day allocation under the two designs") %>%
+  ggplot(aes(compound, fct_rev(donor_id), fill = weekday)) +
+  geom_tile(colour = "white", linewidth = 1.4) +
+  geom_text(aes(label = str_sub(weekday, 1, 3)), colour = "white",
+            fontface = "bold", size = 4.6) +
+  facet_wrap(~ design) +
+  scale_fill_manual(values = day_cols) +
+  labs(title = "The only difference between the designs is which day each plate ran",
+       subtitle = "left: day varies within compound (a block)   ·   right: day tracks compound (a confounder)",
+       x = NULL, y = "Hepatocyte lot") +
+  theme(panel.grid = element_blank(), legend.position = "bottom")
+```
+
+### What each design concludes
+
+```{r m4-consequences}
+dm_conf <- donor_means(sim$viab_conf)
+
+pair_up <- function(d) {
+  d %>% select(donor_id, compound, viability) %>%
+    pivot_wider(names_from = compound, values_from = viability) %>%
+    mutate(difference = `CPD-B` - `CPD-A`)
+}
+
+design_result <- bind_rows(pair_up(dm)      %>% mutate(design = "Blocked"),
+                           pair_up(dm_conf) %>% mutate(design = "Confounded"))
+
+## the difference we would see with no day effect and no measurement noise
+true_difference <- sim$truth %>%
+  select(donor_id, compound, viab_true) %>%
+  pivot_wider(names_from = compound, values_from = viab_true) %>%
+  summarise(x = mean(`CPD-B` - `CPD-A`)) %>% pull(x)
+
+design_summary <- design_result %>%
+  group_by(design) %>%
+  summarise(mean_difference_pp = mean(difference), .groups = "drop") %>%
+  mutate(simulated_truth_pp = true_difference,
+         error_pp           = mean_difference_pp - true_difference,
+         across(where(is.numeric), ~ round(.x, 1)))
+
+export_data(design_result, "m04_blocked_vs_confounded",
+            "per-lot compound difference under both schedules")
+design_summary
+```
+
+Both schedules land within a few percentage points of the truth, and on this
+dataset the confounded one is not obviously worse. That is the difficulty with
+confounding: it does not announce itself.
+
+### The experiment that makes it obvious
+
+So run the experiment that settles it. Simulate the same study with the two
+compounds made **exactly identical** — same potency, same slope — and leave
+everything else alone, including the Friday vehicle shift. Any difference the
+analysis now reports is, by construction, not a compound difference.
+
+```{r m4-null-compounds}
+null_cpd <- simulate_workshop_data(seed = params$seed,
+                                   ic50_B = sim$params$ic50_A)
+
+test_pair <- function(d, label) {
+  w  <- pair_up(donor_means(d))
+  tt <- t.test(w$`CPD-B`, w$`CPD-A`, paired = TRUE)
+  tibble(schedule = label, estimate_pp = tt$estimate,
+         ci_low = tt$conf.int[1], ci_high = tt$conf.int[2],
+         p_value = tt$p.value)
+}
+
+null_result <- bind_rows(
+  test_pair(null_cpd$viab,      "Blocked"),
+  test_pair(null_cpd$viab_conf, "Confounded")) %>%
+  mutate(verdict = if_else(p_value < 0.05,
+                           "a 'significant' difference between identical compounds",
+                           "correctly finds nothing"),
+         across(c(estimate_pp, ci_low, ci_high), ~ round(.x, 1)),
+         p_value = signif(p_value, 3))
+
+export_data(null_result, "m04_identical_compounds",
+            "two IDENTICAL compounds run under both schedules")
+null_result
+```
+
+The blocked schedule reports nothing, correctly. The confounded schedule
+reports a difference of
+`r null_result$estimate_pp[2]` pp with *p* =
+`r null_result$p_value[2]` — statistically significant, perfectly
+reproducible, and entirely an artefact of which day the plates ran.
+
+Nothing in the confounded dataset can reveal this. Day and compound are the
+same column: every CPD-A plate is a Friday plate. No test, no model and no
+amount of care in the analysis can separate two factors that never varied
+independently. In the blocked schedule day varies *within* each compound, so
+it becomes a nuisance you can estimate rather than one you cannot see.
+
+> One subtlety worth naming, because it shows up in the table above. The day
+> effect is **multiplicative** (the vehicle reference moves by a factor) while
+> we are reporting an **additive** difference in percentage points. Blocking
+> makes the day effect cancel exactly in a *ratio*, but only approximately in
+> a difference. Choosing a scale on which your effect is additive is the same
+> decision we made in Module 1, and it keeps repeating.
+
+### The three levers
+
+| Lever | Use it for | Effect | Failure mode |
+|---|---|---|---|
+| **Block** | known, structural sources: day, plate, operator | removes confounding | blocking on something that tracks treatment does nothing |
+| **Randomise** | everything you cannot block or foresee: well position, order | converts unknown bias into honest variance | small experiments can still randomise into an imbalance |
+| **Standardise** | irrelevant sources: same pipette, one consumable lot | shrinks variance | standardising *per arm* manufactures bias |
+
+The last column is where the damage is done. Using the same pipette throughout
+reduces variance. Using pipette A for condition A and pipette B for condition B
+is *also* "standardising", and it creates a confounder. Deliberately varying
+consumable batch within every small experiment "to be representative" is not
+robustness — it is added noise that makes a real effect harder to see.
+
+### Your turn — the design poker (5 min)
+
+In teams of two or three. Each team has four lots (A, 2, 3, 4), two compounds
+(two colours) and two protocols (two shapes). Lay the experiments out in two
+rows: Friday and Monday.
+
+* Which factors did you block?
+* Which did you randomise?
+* Is any factor now perfectly aliased with another? If so, redeal.
+
+> Deeper treatment: `2026-09-statistical-thinking.Rmd` runs both designs
+> through full four-parameter-logistic fits and shows `alias()` returning the
+> confounded term explicitly — the software telling you the design cannot
+> answer the question.
+
+### Takeaway
+
+Good design decides which variation the statistics will be able to separate
+later. After the experiment, no analysis can unmix a confounder.
+
+---
+
+# Module 5 — Comparing two conditions: paired or unpaired?
+
+### Story
+
+Here is the study as two clouds of dots — the way this comparison is usually
+drawn.
+
+```{r m5-clouds, fig.width=12, fig.height=5.5}
+p5a <- dm %>%
+  ggplot(aes(compound, viability, colour = compound)) +
+  geom_point(size = 5, alpha = 0.85,
+             position = position_jitter(width = 0.09, height = 0, seed = 7)) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.45, colour = "grey25") +
+  scale_colour_manual(values = cpd_cols, guide = "none") +
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(title = "A  Two independent-looking groups",
+       subtitle = "the clouds overlap substantially",
+       x = NULL, y = "Viability (% of vehicle)")
+
+p5b <- dm %>%
+  ggplot(aes(compound, viability)) +
+  geom_line(aes(group = donor_id), colour = "grey65", linewidth = 0.8) +
+  geom_point(aes(colour = compound), size = 5, alpha = 0.9) +
+  scale_colour_manual(values = cpd_cols, guide = "none") +
+  coord_cartesian(ylim = c(0, 100)) +
+  labs(title = "B  The same data, lots joined",
+       subtitle = "every lot moves the same way",
+       x = NULL, y = NULL)
+
+p5a | p5b
+```
+
+> What information did the first graph hide?
+
+Every lot was tested with **both** compounds. The vertical scatter in panel A
+is mostly lots being different from one another, not compounds being similar.
+Once the lines are drawn, the lot differences stop competing with the signal.
+
+### Four tests, one dataset
+
+```{r m5-tests}
+wide <- dm %>%
+  select(donor_id, compound, viability) %>%
+  pivot_wider(names_from = compound, values_from = viability) %>%
+  mutate(difference = `CPD-B` - `CPD-A`)
+
+tests <- list(
+  "Student t, unpaired (equal variance assumed)" =
+    t.test(viability ~ compound, data = dm, var.equal = TRUE),
+  "Welch t, unpaired (no equal-variance assumption)" =
+    t.test(viability ~ compound, data = dm),
+  "Paired t" =
+    t.test(wide$`CPD-B`, wide$`CPD-A`, paired = TRUE),
+  "Wilcoxon signed rank (paired, non-parametric)" =
+    wilcox.test(wide$`CPD-B`, wide$`CPD-A`, paired = TRUE, conf.int = TRUE))
+
+test_table <- imap_dfr(tests, function(tt, nm) {
+  est <- if (grepl("^Paired|^Wilcoxon", nm)) unname(tt$estimate)
+         else unname(-diff(rev(tt$estimate)))
+  tibble(test = nm,
+         estimate_pp = est,
+         ci_low  = tt$conf.int[1] * if (grepl("unpaired", nm)) -1 else 1,
+         ci_high = tt$conf.int[2] * if (grepl("unpaired", nm)) -1 else 1,
+         p_value = tt$p.value)
+}) %>%
+  mutate(ci = pmin(ci_low, ci_high), ci_high = pmax(ci_low, ci_high),
+         ci_low = ci,
+         ci_width = ci_high - ci_low,
+         beats_threshold = if_else(ci_low > MCID, "yes", "inconclusive")) %>%
+  select(test, estimate_pp, ci_low, ci_high, ci_width, p_value,
+         beats_threshold) %>%
+  mutate(across(c(estimate_pp, ci_low, ci_high, ci_width), ~ round(.x, 1)),
+         p_value = signif(p_value, 3))
+
+export_data(test_table, "m05_four_tests",
+            "the same comparison under four tests")
+test_table
+```
+
+Read the last two columns, not the p-value column. Every test agrees there is
+a difference. They do **not** agree on whether it clears the
+`r round(MCID, 1)` pp threshold the team committed to in Module 1: the
+unpaired analyses cannot tell, the paired analysis can. Ignoring the pairing
+did not just cost significance — it cost the decision.
+
+### The decision rule
+
+Are observations linked by the experimental design?
+
+* same lot under both compounds → **paired**
+* same animal before and after → **paired**
+* separately sampled groups → **unpaired**
+
+Pairing is a property of the design, fixed before the data exist. It is never
+something you discover by trying both and keeping the better result.
+
+If the groups really are independent, do not assume equal variances without a
+reason. **Welch's t-test** does not require equal variances, and when the
+variances happen to be equal it costs almost nothing — which is exactly what
+the first two rows of the table show here. The lot-level SDs of the two groups
+are
+`r paste(round(tapply(dm$viability, dm$compound, sd), 1), collapse = " and ")`
+pp, close enough that Student and Welch agree to the first decimal. That is the
+argument *for* Welch as the default: you get the protection when you need it
+and pay nothing when you do not, and you avoid having to test for equal
+variances first — a pre-test that itself has poor power at these sample sizes.
+
+The Wilcoxon signed-rank test is the paired non-parametric option. On eight
+pairs it gives a similar estimate with a larger p-value, because ranking eight
+numbers throws away most of the information they contain. With *n* = 8 the
+smallest p-value it can ever return is 1/128 ≈ 0.008 — so it cannot produce
+strong evidence here no matter what the data look like. Non-parametric is not
+a free lunch; it buys robustness to distributional assumptions with power.
+
+### Visualisation hierarchy
+
+1. the raw observations
+2. the structure — pairing, blocks, batches
+3. the estimated effect
+4. its uncertainty
+
+Bars, SEM whiskers and asterisks come after all four, if at all.
+
+### Wide and long, the same 16 numbers
+
+```{r m5-wide-long}
+export_data(dm %>% select(donor_id, donor_sex, donor_age, weekday, compound,
+                          viability, sd_wells),
+            "m05_lot_means_long",
+            "lot-level means, long format - one row per lot x compound (for R/Python)")
+export_data(wide, "m05_lot_means_wide",
+            "lot-level means, wide format - one row per lot (for Excel/Prism)")
+
+wide %>% mutate(across(where(is.numeric), ~ round(.x, 1)))
+```
+
+The **long** format has one row per measurement and a column naming each
+factor; it is what `ggplot2`, `dplyr` and most statistical models expect. The
+**wide** format spreads one factor across columns; it is what spreadsheets and
+Prism are built for, and it is the right shape for a paired test because the
+pairing is carried by the row. Both files are exported. Converting between
+them is `pivot_wider()` / `pivot_longer()`, and the conversion is lossless
+only if the long table carries every identifier — which is a good reason to
+keep lot, day and plate as real columns rather than as sheet names.
+
+### Your turn (5 min)
+
+Find an experiment in your own work where the samples are paired. Was it
+analysed that way?
+
+### Takeaway
+
+The statistical test follows the experimental design. Draw the structure
+before you test it, and the right test is usually obvious.
+
+---
+
+# Module 6 — P-values, effect sizes and confidence intervals
+
+### Story
+
+Assume, for a moment, that the two compounds are **identical**. Then run the
+whole study — 8 lots, 3 wells, both compounds — `r params$n_sim` times in that
+imaginary world, and record the difference each time.
+
+```{r m6-null, fig.width=12, fig.height=5.5}
+null_world <- replicate_studies(params$n_sim, n_donors = 8, n_wells = 3,
+                                fold = 1)
+observed   <- tests[["Paired t"]]$estimate
+
+export_data(null_world %>% select(sim, estimate, p_value),
+            "m06_null_simulation",
+            sprintf("%d simulated studies in a world where the compounds are identical",
+                    params$n_sim))
+
+p6a <- ggplot(null_world, aes(estimate)) +
+  geom_histogram(bins = 45, fill = "grey78", colour = "white") +
+  geom_histogram(data = filter(null_world, abs(estimate) >= abs(observed)),
+                 bins = 45, fill = "#c1443b", colour = "white") +
+  geom_vline(xintercept = c(-1, 1) * observed, linetype = "dashed",
+             linewidth = 1) +
+  labs(title = "A  What 'no difference' looks like",
+       subtitle = sprintf("dashed lines: the difference we actually observed (%.1f pp)",
+                          observed),
+       x = "Difference between compounds (pp)", y = "Simulated studies")
+
+p6b <- ggplot(null_world, aes(p_value)) +
+  geom_histogram(breaks = seq(0, 1, 0.05), fill = "grey78", colour = "white") +
+  geom_histogram(data = filter(null_world, p_value < 0.05),
+                 breaks = seq(0, 1, 0.05), fill = "#c1443b", colour = "white") +
+  labs(title = "B  P-values when nothing is going on",
+       subtitle = sprintf("flat, by construction; %.1f%% fall below 0.05",
+                          100 * mean(null_world$p_value < 0.05)),
+       x = "p-value", y = "Simulated studies")
+
+p6a | p6b
+```
+
+Panel A *is* the p-value: the red area is the fraction of studies in a
+no-difference world that would produce a difference at least as extreme as
+ours. Here that fraction is
+`r sprintf("%.4f", mean(abs(null_world$estimate) >= abs(observed)))`,
+and the paired t-test reports
+`r format.pval(tests[['Paired t']]$p.value, digits = 3)` — the same quantity, computed from
+a formula instead of from `r params$n_sim` simulated experiments.
+
+Panel B is worth a minute on its own. When there is genuinely nothing to find,
+p-values are **uniform**: every value is as likely as every other, and 5% land
+under 0.05. That is what a 5% false-positive rate means, and it is why a
+single p-value below 0.05 is weak evidence on its own.
+
+### What a p-value is not
+
+A p-value is **not**:
+
+* the probability that the compounds are identical
+* the probability that the result happened by chance
+* the probability that the experiment will replicate
+* anything at all about the **size** of the effect
+
+### Confidence intervals, and what "95%" refers to
+
+```{r m6-coverage, fig.width=11, fig.height=6}
+coverage_sims <- replicate_studies(100, n_donors = 8, n_wells = 3, fold = 5)
+true_effect   <- mean(coverage_sims$estimate)
+
+coverage_sims %>%
+  mutate(covers = lwr <= true_effect & upr >= true_effect,
+         sim = rank(estimate, ties.method = "first")) %>%
+  ggplot(aes(sim, estimate, colour = covers)) +
+  geom_hline(yintercept = true_effect, linetype = "dashed", linewidth = 1) +
+  geom_linerange(aes(ymin = lwr, ymax = upr), linewidth = 0.8) +
+  geom_point(size = 1.8) +
+  coord_flip() +
+  scale_colour_manual(values = c(`TRUE` = "grey55", `FALSE` = "#c1443b"),
+                      labels = c(`TRUE` = "covers the truth",
+                                 `FALSE` = "misses")) +
+  labs(title = "One hundred repeats of the same study, one interval each",
+       subtitle = "the truth is fixed; the intervals move",
+       x = "Simulated study (sorted)", y = "Effect estimate (pp)") +
+  theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(),
+        legend.position = "bottom")
+```
+
+"95% confidence" is a statement about the **procedure**, not about any one
+interval: run the study forever and 95% of the intervals you build this way
+will contain the truth. You never learn which kind you got. What the interval
+does give you, immediately and usefully, is a range of effect sizes the data
+are compatible with.
+
+### Which result is more informative?
+
+> **A.** p = 0.03
+>
+> **B.** estimated difference = 38 pp, plausible range 26 to 50 pp
+
+Only B can be compared with a threshold. Only B supports a decision.
+
+### Three results, three different conclusions
+
+```{r m6-three, fig.width=11, fig.height=5}
+three <- tribble(
+  ~result,                        ~estimate, ~lwr, ~upr,
+  "A  large effect, very uncertain",   45,     -5,   95,
+  "B  tiny effect, very precise",       4,      1,    7,
+  "C  moderate effect, moderate CI",   38,     26,   50) %>%
+  mutate(verdict = case_when(
+    lwr > MCID  ~ "relevant difference",
+    upr < MCID  ~ "no relevant difference",
+    TRUE        ~ "inconclusive"),
+    verdict = factor(verdict, levels = c("relevant difference",
+                                         "no relevant difference",
+                                         "inconclusive")))
+
+export_data(three, "m06_three_results",
+            "three hypothetical results and what each licenses you to conclude")
+
+ggplot(three, aes(estimate, fct_rev(result), colour = verdict)) +
+  annotate("rect", xmin = -Inf, xmax = MCID, ymin = -Inf, ymax = Inf,
+           fill = "grey92") +
+  geom_vline(xintercept = MCID, linetype = "dashed", linewidth = 1) +
+  geom_vline(xintercept = 0, colour = "grey60") +
+  geom_linerange(aes(xmin = lwr, xmax = upr), linewidth = 1.4) +
+  geom_point(size = 5) +
+  annotate("text", x = MCID + 1, y = 0.55, hjust = 0, size = 5,
+           label = sprintf("relevance threshold %.1f pp", MCID)) +
+  scale_colour_manual(values = c("relevant difference" = "#3b7a57",
+                                 "no relevant difference" = "#4c8fbd",
+                                 "inconclusive" = "#d9a441")) +
+  labs(title = "Read the interval against the threshold, not against zero",
+       subtitle = "grey: differences too small to act on",
+       x = "Difference between compounds (pp)", y = NULL) +
+  theme(legend.position = "bottom")
+```
+
+B is the interesting one: a precise, unambiguous, *statistically significant*
+effect that is far too small to matter. Statistical significance and biological
+importance are different questions, and only the second one was ever the
+reason for running the assay.
+
+### Three conclusions, not two
+
+Most people are trained to report two outcomes. There are three:
+
+1. **Evidence for a relevant difference** — the interval lies above the
+   threshold
+2. **Evidence against a relevant difference** — the interval lies entirely
+   below it
+3. **Inconclusive** — the interval spans it; the experiment cannot separate
+   the two, and that is a result worth reporting
+
+### Our study
+
+```{r m6-verdict}
+paired  <- tests[["Paired t"]]
+verdict <- tibble(
+  estimate_pp = paired$estimate,
+  ci_low      = paired$conf.int[1],
+  ci_high     = paired$conf.int[2],
+  threshold   = MCID,
+  p_value     = paired$p.value,
+  conclusion  = case_when(
+    paired$conf.int[1] > MCID ~ "relevant difference - act",
+    paired$conf.int[2] < MCID ~ "no relevant difference - do not act",
+    TRUE                      ~ "inconclusive - more lots needed")) %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 3)))
+
+export_data(verdict, "m06_study_verdict",
+            "the pre-registered decision applied to our data")
+verdict
+```
+
+### Your turn (5 min)
+
+Take the three results in the figure above. Which of them would change what
+you do next, and why? Then think of the last p-value you reported in a
+presentation: could you still state the effect size and its interval? If not,
+what did your audience actually take away?
+
+### Takeaway
+
+The p-value answers one narrow question about a world we do not believe in.
+The effect size and its interval answer the question we asked. Report both,
+decide on the second.
+
+---
+
+# Module 7 — Surprising observations
+
+### Story
+
+Two values in the dataset look wrong. They are not the same kind of thing.
+
+```{r m7-candidates, fig.width=12, fig.height=5.5}
+lot_flags <- viab %>%
+  group_by(donor_id, compound) %>%
+  mutate(well_z = (viability_pct - median(viability_pct)) /
+                  (mad(viability_pct) + 1e-9)) %>%
+  ungroup()
+
+export_data(lot_flags %>% select(donor_id, compound, weekday, replicate,
+                                 viability_pct, well_z),
+            "m07_outlier_candidates",
+            "all wells with a within-condition robust z score")
+
+lot_flags %>%
+  ggplot(aes(fct_reorder(donor_id, viability_pct), viability_pct,
+             colour = compound)) +
+  geom_point(size = 4, alpha = 0.85,
+             position = position_dodge(width = 0.5)) +
+  annotate("curve", x = 4.4, xend = 3.1, y = 8, yend = 20, curvature = -0.3,
+           arrow = arrow(length = unit(0.2, "cm")), colour = "grey35") +
+  annotate("text", x = 4.5, y = 5, hjust = 0, size = 4.6, colour = "grey25",
+           label = "candidate 1: one well, far from its own two siblings") +
+  annotate("curve", x = 1.6, xend = 0.9, y = 62, yend = 42, curvature = 0.3,
+           arrow = arrow(length = unit(0.2, "cm")), colour = "grey35") +
+  annotate("text", x = 1.7, y = 64, hjust = 0, size = 4.6, colour = "grey25",
+           label = "candidate 2: a whole lot, low for BOTH compounds") +
+  scale_colour_manual(values = cpd_cols) +
+  labs(title = "All 48 wells",
+       subtitle = "one of these is an artefact and one is biology",
+       x = "Hepatocyte lot", y = "Viability (% of vehicle)") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 12),
+        legend.position = "bottom")
+```
+
+### Candidate 1 — a single well
+
+```{r m7-well}
+lot_flags %>%
+  filter(donor_id == sim$params$bubble_donor,
+         compound == sim$params$bubble_compound) %>%
+  select(donor_id, compound, replicate, raw_rlu, viability_pct, well_z)
+```
+
+The laboratory notebook for that plate says:
+
+> *Air bubble observed in well B; pipette felt strange.*
+
+An independent, documented, technical cause, recorded **before** anyone looked
+at the result. The other two wells of the same condition agree with each
+other. This is a measurement failure, and excluding it is a QC decision, not
+a statistical one.
+
+### Candidate 2 — a whole lot
+
+```{r m7-grubbs}
+grubbs <- function(x) {
+  x <- x[!is.na(x)]; n <- length(x)
+  G     <- max(abs(x - mean(x))) / sd(x)
+  tcrit <- qt(0.05 / (2 * n), df = n - 2)
+  Gcrit <- (n - 1) / sqrt(n) * sqrt(tcrit^2 / (n - 2 + tcrit^2))
+  tibble(n = n, G = round(G, 3), G_crit = round(Gcrit, 3), flagged = G > Gcrit)
+}
+
+dm %>%
+  group_by(compound) %>%
+  group_modify(~ grubbs(.x$viability)) %>%
+  ungroup()
+```
+
+Lot `r sim$params$sensitive_donor` is more sensitive to **both** compounds —
+its IC~50~ is genuinely about
+`r sim$params$sensitive_fold`-fold lower. A routine outlier test will flag it
+anyway, because it is answering the wrong question: Grubbs asks whether a value
+is improbable under an assumed distribution, never whether it is *wrong*.
+Nothing in the QC record marks that plate. A lot that is genuinely more
+sensitive is precisely the observation a safety margin should be built on.
+
+### A workflow, not a test
+
+1. **Verify** — transcription, instrument, pipetting, sample identity
+2. **Investigate** — is there an experimental explanation in the record?
+3. **Apply pre-defined rules** — was an exclusion criterion fixed before the
+   result was seen?
+4. **Do not delete because it is inconvenient** — biology is often surprising
+5. **Run a sensitivity analysis** — does the conclusion change either way?
+6. **Document** — report what was excluded and why
+
+### Step 5, done
+
+```{r m7-sensitivity}
+no_bubble <- viab %>% filter(!bubble) %>% donor_means()
+no_lot    <- dm %>% filter(donor_id != sim$params$sensitive_donor)
+
+run_paired <- function(d, label) {
+  w  <- d %>% select(donor_id, compound, viability) %>%
+    pivot_wider(names_from = compound, values_from = viability)
+  tt <- t.test(w$`CPD-B`, w$`CPD-A`, paired = TRUE)
+  tibble(scenario = label, n_lots = nrow(w),
+         estimate_pp = tt$estimate, ci_low = tt$conf.int[1],
+         ci_high = tt$conf.int[2], p_value = tt$p.value)
+}
+
+sensitivity <- bind_rows(
+  run_paired(dm,        "keep everything"),
+  run_paired(no_bubble, "exclude the air-bubble well (documented QC failure)"),
+  run_paired(no_lot,    "exclude the sensitive lot (no technical justification)"),
+  run_paired(no_bubble %>% filter(donor_id != sim$params$sensitive_donor),
+             "exclude both")) %>%
+  mutate(clears_threshold = if_else(ci_low > MCID, "yes", "inconclusive"),
+         across(c(estimate_pp, ci_low, ci_high), ~ round(.x, 1)),
+         p_value = signif(p_value, 3))
+
+export_data(sensitivity, "m07_sensitivity_analysis",
+            "the conclusion under four exclusion scenarios")
+sensitivity
+```
+
+Dropping the bubble well changes the estimate barely at all — because it was
+one of three wells that were then averaged, and averaging is already doing
+most of the work. Dropping the sensitive lot is a different matter: the
+pairing had absorbed that lot completely (it is low for both compounds, so its
+*difference* is ordinary), so removing it discards a lot that was costing
+nothing and carrying real information about how variable human hepatocytes are.
+
+> The companion document extends this to a whole plate that fails
+> pre-specified QC, with Z' factor, vehicle CV and signal window as the
+> criteria, and to the case where you should model the extra variance rather
+> than delete it.
+
+### Your turn (5 min)
+
+Think of a value you or a colleague once excluded from an analysis. Which of
+the six steps above justified it? Was the criterion written down before the
+result was seen — and would the conclusion have survived if the value had
+stayed in?
+
+### Takeaway
+
+Ask which question you are answering: is the value *implausible given the
+controls*, or merely *inconvenient given the hypothesis*? The first is a QC
+exclusion. The second is data manipulation. Running it both ways is cheap and
+almost always the right thing to report.
+
+---
+
+# Module 8 — Power, sample size and the decision
+
+### Story
+
+Back to the original question, with the whole dataset visible.
+
+> Would you change the project's plan on the basis of these data? What
+> experiment, if any, would you run next?
+
+### Power, without formulas
+
+The same true `r thr$true_fold`-fold difference, the same assay, the same
+noise. Only the number of lots changes.
+
+```{r m8-power, fig.width=12, fig.height=5.5}
+power_grid <- map_dfr(c(3, 6, 12, 24), function(n)
+  replicate_studies(params$n_sim, n_donors = n, n_wells = 3,
+                    fold = thr$true_fold))
+
+power_summary <- power_grid %>%
+  group_by(n_donors) %>%
+  summarise(
+    power_significant = mean(significant),
+    power_decisive    = mean(calls_relevant),
+    median_estimate   = median(estimate),
+    median_ci_width   = median(upr - lwr),
+    .groups = "drop") %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+
+export_data(power_summary, "m08_power_by_n",
+            "power to reach significance vs power to clear the relevance threshold")
+power_summary
+```
+
+```{r m8-power-fig, fig.width=12, fig.height=5.5}
+p8a <- power_summary %>%
+  pivot_longer(c(power_significant, power_decisive),
+               names_to = "criterion", values_to = "power") %>%
+  mutate(criterion = recode(criterion,
+           power_significant = "p < 0.05\n(\"is there any difference?\")",
+           power_decisive    = "CI above the threshold\n(\"is it big enough to act on?\")")) %>%
+  ggplot(aes(n_donors, power, colour = criterion)) +
+  geom_hline(yintercept = 0.8, linetype = "dashed", colour = "grey45") +
+  geom_line(linewidth = 1.2) + geom_point(size = 4) +
+  scale_x_continuous(breaks = c(3, 6, 12, 24)) +
+  scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
+  scale_colour_manual(values = c("#4c8fbd", "#3b7a57")) +
+  labs(title = "A  Two kinds of power",
+       subtitle = "getting a small p-value is much easier than answering the question",
+       x = "Independent hepatocyte lots", y = "Proportion of studies") +
+  theme(legend.position = "bottom")
+
+p8b <- power_grid %>%
+  mutate(n_lab = factor(paste0("n = ", n_donors),
+                        levels = paste0("n = ", c(3, 6, 12, 24)))) %>%
+  ggplot(aes(estimate, n_lab, fill = n_lab)) +
+  geom_violin(colour = NA, alpha = 0.75) +
+  geom_boxplot(width = 0.12, outlier.shape = NA, fill = "white") +
+  geom_vline(xintercept = median(power_grid$estimate[power_grid$n_donors == 24]),
+             linetype = "dashed", linewidth = 1) +
+  scale_fill_brewer(palette = "Blues", guide = "none") +
+  labs(title = "B  The estimate itself, not just its p-value",
+       subtitle = "at n = 3 the study can return almost any answer",
+       x = "Estimated difference (pp)", y = NULL)
+
+p8a | p8b
+```
+
+Two things to take from panel A. First, power is not a property of an assay —
+it is a property of an assay **plus a hypothesised effect size**. "How many
+samples do I need?" has no answer until "what difference would matter?" has
+one. Second, the two curves are far apart: with
+`r power_summary$n_donors[1]` lots you would reach significance in
+`r scales::percent(power_summary$power_significant[1])` of studies but could only
+*act* on `r scales::percent(power_summary$power_decisive[1])` of them.
+
+Panel B is the reason small studies are dangerous rather than merely weak. At
+*n* = 3 the same experiment, run on the same compounds, can return almost any
+answer.
+
+There is a second, less obvious cost. A study that is underpowered can only
+reach significance by landing on an unusually large estimate — so among the
+studies that *do* get published, the effect is systematically overstated. The
+5-fold difference above is too easy to detect for this to bite, so the
+simulation below uses a genuinely marginal effect instead.
+
+```{r m8-exaggeration, fig.width=11, fig.height=5}
+marginal <- map_dfr(c(3, 4, 6, 12, 24), function(n)
+  replicate_studies(params$n_sim, n_donors = n, n_wells = 3, fold = 1.3))
+
+exaggeration <- marginal %>%
+  group_by(n_donors) %>%
+  summarise(power            = mean(significant),
+            all_studies      = median(estimate),
+            significant_only = median(estimate[significant]),
+            .groups = "drop") %>%
+  mutate(exaggeration = significant_only / all_studies,
+         across(where(is.numeric), ~ round(.x, 2)))
+
+export_data(exaggeration, "m08_exaggeration",
+            "with a marginal true effect: median estimate among all studies vs among significant ones")
+exaggeration
+```
+
+```{r m8-exaggeration-fig, fig.width=11, fig.height=5}
+ggplot(exaggeration, aes(power, exaggeration)) +
+  geom_hline(yintercept = 1, linetype = "dashed", colour = "grey45") +
+  geom_line(linewidth = 1.2, colour = "#c1443b") +
+  geom_point(size = 4.5, colour = "#c1443b") +
+  geom_text(aes(label = paste0("n = ", n_donors)), vjust = -1.2, size = 5) +
+  scale_x_continuous(labels = scales::percent) +
+  expand_limits(y = c(0.95, 1.5)) +
+  labs(title = "The less power a study has, the more it exaggerates",
+       subtitle = "ratio of the median published effect to the median true-study effect, when only significant studies are reported",
+       x = "Power", y = "Exaggeration of the reported effect")
+```
+
+At `r scales::percent(exaggeration$power[1])` power the surviving studies
+overstate the effect by about
+`r scales::percent(exaggeration$exaggeration[1] - 1)`; by the time power
+reaches `r scales::percent(exaggeration$power[nrow(exaggeration)])` the
+distortion is gone. An underpowered literature is not merely a noisy one — it
+is a biased one, and the bias always points the same way.
+
+### Where to spend twenty-four wells
+
+```{r m8-allocation, fig.width=11, fig.height=5}
+allocation <- bind_rows(
+  replicate_studies(params$n_sim, n_donors = 3, n_wells = 8,
+                    fold = thr$true_fold) %>%
+    mutate(allocation = "3 lots × 8 wells"),
+  replicate_studies(params$n_sim, n_donors = 8, n_wells = 3,
+                    fold = thr$true_fold) %>%
+    mutate(allocation = "8 lots × 3 wells"))
+
+allocation %>%
+  group_by(allocation) %>%
+  summarise(power_significant = mean(significant),
+            power_decisive    = mean(calls_relevant),
+            median_ci_width   = median(upr - lwr), .groups = "drop") %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
+  export_data("m08_allocation",
+              "24 wells spent as 3 lots x 8 wells or 8 lots x 3 wells")
+
+allocation %>%
+  ggplot(aes(estimate, fill = allocation)) +
+  geom_density(alpha = 0.55, colour = NA) +
+  geom_vline(xintercept = MCID, linetype = "dashed", linewidth = 1) +
+  annotate("text", x = MCID + 1, y = 0, hjust = 0, vjust = -0.6, size = 5,
+           label = "relevance threshold") +
+  scale_fill_manual(values = c("#c1443b", "#3b7a57")) +
+  labs(title = "The same 24 wells, allocated two ways",
+       subtitle = "technical replicates cannot substitute for independent lots",
+       x = "Estimated difference (pp)", y = "Density") +
+  theme(legend.position = "bottom")
+```
+
+Both use 24 wells per compound. Three lots with eight wells each measures three
+lots very precisely and then has to generalise from three; eight lots with
+three wells each measures each lot a little less precisely and generalises from
+eight. Since the uncertainty that matters is lot-to-lot, the second wins — and
+it keeps winning no matter how many wells you add to the first.
+
+### Your turn (5 min)
+
+Would you act on these data? What would you run next, and how many lots would
+it need?
+
+### The final checklist
+
+1. What exactly is the question, and what difference would matter?
+2. What population do I want to generalise to?
+3. What is my independent experimental unit?
+4. Where can bias enter?
+5. Which variation do I block, randomise, or standardise?
+6. Plot the observations so the experimental structure is visible.
+7. Estimate the effect **and** its uncertainty.
+8. Use a test that matches the design.
+9. Investigate surprising observations instead of deleting them.
+10. Decide using effect size, uncertainty and context — not the p-value alone.
+
+### Takeaway
+
+Power is not a number you compute at the end to justify what you did. It is
+the question "what would this experiment be able to tell me?", asked while
+there is still time to change the answer.
+
+---
+
+# Module 9 — What we have learned
+
+One dataset, ten questions, and one answer that changed as we asked better
+questions about the design:
+
+```{r m9-journey}
+journey <- bind_rows(
+  tibble(step = "1. count wells, ignore lots (Module 3)",
+         estimate_pp = pseudo$estimate_pp[1],
+         ci_low = pseudo$ci_low[1], ci_high = pseudo$ci_high[1]),
+  tibble(step = "2. confounded schedule (Module 4)",
+         estimate_pp = design_summary$mean_difference_pp[
+           design_summary$design == "Confounded"],
+         ci_low = NA_real_, ci_high = NA_real_),
+  tibble(step = "3. lots, but pairing ignored (Module 5)",
+         estimate_pp = test_table$estimate_pp[2],
+         ci_low = test_table$ci_low[2], ci_high = test_table$ci_high[2]),
+  tibble(step = "4. lots, paired, blocked (Modules 5-7)",
+         estimate_pp = test_table$estimate_pp[3],
+         ci_low = test_table$ci_low[3], ci_high = test_table$ci_high[3])) %>%
+  mutate(threshold_pp = round(MCID, 1),
+         conclusion = case_when(
+           is.na(ci_low)     ~ "no interval - the design cannot separate day from compound",
+           ci_low > MCID     ~ "relevant difference",
+           ci_high < MCID    ~ "no relevant difference",
+           TRUE              ~ "inconclusive"),
+         earned = c("no - the interval is too narrow to be believed",
+                    "no - the estimate contains the run-day effect",
+                    "yes",
+                    "yes"),
+         across(where(is.numeric), ~ round(.x, 1)))
+
+export_data(journey, "m09_summary_of_analyses",
+            "the same 48 numbers analysed four ways")
+journey
+```
+
+Same 48 numbers every time. Only step 4 is both right and *entitled* to be
+right.
+
+Step 1 is the uncomfortable one: counting wells instead of lots reaches the
+same conclusion as the correct analysis, with a far smaller p-value. It is
+right by accident. Had the lots been a little more variable, or the pairing a
+little weaker, the same shortcut would have produced the same unwarranted
+confidence behind a wrong answer — and nothing in the output would have looked
+different. This is why the questions in this workshop are about the design
+rather than about the arithmetic: the arithmetic always runs, and it never
+tells you which of these four rows you are in.
+
+### The three things worth remembering
+
+* Good design **minimises unnecessary and avoidable variation** while
+  maximising the chance of detecting the effect you care about. It decides
+  what the statistics will be able to separate later.
+* Design and analysis **reduce uncertainty; they never remove it.** An honest
+  interval is a better deliverable than a confident sentence.
+* The decision is **scientific**. Effect size, threshold, context and prior
+  knowledge live outside statistics; the analysis only tells you how much of
+  the data's uncertainty you have to carry into that decision.
+
+### The one-line version
+
+> To answer *"which statistical test should I use?"* you first have to answer
+> *"how were the data generated?"*
+
+---
+
+# Module 10 — Where to go from here
+
+### Getting help from an LLM
+
+This is where the workshop pays off in practice. Consider the usual prompt:
+
+> *"Compare columns A and B statistically."*
+
+An LLM will answer it. It will pick a test, report a p-value, and sound
+confident. It cannot possibly know whether the columns are paired, whether the
+rows are wells or lots, whether the two groups were run on different days, or
+what difference you would act on. So it will guess, and the guess is usually
+an unpaired t-test on every row — which, on this dataset, is exactly the
+analysis that gets the wrong answer twice over.
+
+Now the same request with the design in it:
+
+> *"These measurements come from eight independent human hepatocyte lots. Each
+> lot was tested with both compounds, with three technical replicate wells per
+> lot and compound. The independent experimental unit is the lot, not the
+> well. The plates were run over two days; day is balanced across compounds.
+> We decided in advance that a difference smaller than 24 percentage points of
+> viability would not change our decision. Help me visualise the data so the
+> pairing is visible, estimate the compound difference with its uncertainty,
+> and compare that interval with our threshold. Before you recommend a test,
+> tell me what you think the independent unit is and whether the comparison is
+> paired."*
+
+Everything that makes the second prompt work is a design fact, and every one
+of those facts was decided before any data existed. The final sentence is the
+most useful habit: **ask the model to state its assumptions about the unit and
+the pairing before it computes anything**, so that you can catch a wrong
+assumption while it is still cheap.
+
+The same applies to a colleague, a statistician, or your own notebook six
+months from now.
+
+### Data to take away
+
+Every module exported the data it used. They are in
+`r params$outdir`, as plain CSV — open them in Excel, Prism, R, Python, or
+paste one into an LLM along with the design description above.
+
+```{r m9-manifest}
+.manifest %>% arrange(file)
+```
+
+```{r m9-full-exports}
+## the complete dataset in both shapes, plus the hidden truth
+export_data(viab, "full_dataset_long",
+            "all 48 wells with plate references (long format)")
+
+export_data(
+  viab %>%
+    select(donor_id, donor_sex, donor_age, weekday, compound, replicate,
+           viability_pct) %>%
+    pivot_wider(names_from = c(compound, replicate),
+                values_from = viability_pct,
+                names_glue = "{compound}_well{replicate}"),
+  "full_dataset_wide",
+  "all 48 wells, one row per lot (wide format, for Excel/Prism)")
+
+export_data(
+  sim$truth %>%
+    select(donor_id, compound, ic50_true, viab_true, sensitive) %>%
+    mutate(across(where(is.numeric), ~ round(.x, 2))),
+  "answer_key_true_values",
+  "the simulated ground truth - the answer key, for after the workshop")
+```
+
+### Reading
+
+* Krzywinski & Altman, *Points of Significance*, Nature Methods (2013–2015) —
+  short, visual, and written for exactly this audience
+* Lazic, *Experimental Design for Laboratory Biologists* (2016) — the best
+  single book on pseudoreplication and blocking in bench science
+* Amrhein, Greenland & McShane, *Retire statistical significance*, Nature
+  (2019) — the argument behind Module 6
+* The ARRIVE and *Nature* reporting checklists — useful even when you are not
+  publishing
+
+### And otherwise
+
+Come and talk to me. Most statistical problems that reach a statistician are
+design problems that arrived too late, and the conversation is much shorter
+and much happier when it happens **before** the experiment.
+
+---
+
+# Appendix — the companion document
+
+`2026-09-statistical-thinking.Rmd` takes the same assay to full analyst depth
+and is the place to look when a module raised a question this notebook
+deliberately simplified:
+
+| Topic | Where |
+|---|---|
+| Full 96-well plate layout, edge effects | *Design* |
+| Eight concentrations, four-parameter logistic fits | *Curve fitting* |
+| Absolute vs relative IC~50~, and why the difference matters | *Curve fitting* |
+| Pre-specified plate QC: Z', vehicle CV, signal window | *Plate quality control* |
+| `alias()` and formally undiagnosable designs | *Consequences of the two designs* |
+| A whole plate failing technically | *Perturbation 1* |
+| Grubbs vs a genuinely sensitive lot | *Perturbation 2* |
+| Weighted fitting, biological vs technical variance | *Perturbation 3* |
+
+# Session information
+
+```{r session}
+sessionInfo()
+```

@@ -1,0 +1,1097 @@
+---
+title: "CellTiter-Glo in primary human hepatocytes: two compounds, two run days"
+subtitle: "Run-day confounding, a failed plate, a sensitive donor, and unequal technical variance"
+author: "Synthetic data — for method illustration only"
+date: "`r format(Sys.Date(), '%d %B %Y')`"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    number_sections: true
+    code_folding: show
+    fig_width: 9
+    fig_height: 5.5
+params:
+  seed: 20260919
+  ic50_A: 10       # uM, ground truth for CPD-A (the more cytotoxic compound)
+  ic50_B: 50       # uM, ground truth for CPD-B
+  hill_A: 1.7
+  hill_B: 1.5
+  gsd_A: 1.35      # donor-to-donor geometric SD of the IC50
+  gsd_B: 1.45
+  friday_vehicle_gain: 0.20  # vehicle wells read 20% higher on Friday
+  edge_loss: 0.10  # fractional signal loss in perimeter wells; 0 switches it off
+  ## --- perturbation 1: one plate fails technically -------------------------
+  failed_donor: "HH-1154"
+  failed_compound: "CPD-B"
+  failed_gain: 0.15     # whole-plate signal collapse (reagent under-dispense)
+  failed_extra_cv: 0.30 # additional well-to-well CV on that plate
+  ## --- perturbation 2: one genuinely sensitive donor -----------------------
+  sensitive_donor: "HH-1263"
+  sensitive_factor: 0.70  # IC50 30% lower for BOTH compounds - real, not an error
+  ## --- perturbation 3: unequal technical variance --------------------------
+  floor_cv_gain: 0.12   # extra CV as the signal approaches the assay floor
+  outdir: "output"
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, message = FALSE, warning = FALSE,
+                      fig.align = "center", dev = "png", dpi = 150)
+```
+
+# Purpose
+
+Two compounds are compared for cytotoxicity in primary human hepatocytes using
+the CellTiter-Glo ATP readout. Ground truth is fixed at IC~50~ =
+`r params$ic50_A` µM for CPD-A and `r params$ic50_B` µM for CPD-B — a true
+`r round(params$ic50_B / params$ic50_A, 1)`-fold separation.
+
+The plates cannot all be run on one day, so the assay is split over **Friday
+and Monday**. The simulated truth is that the *vehicle wells* read
+`r scales::percent(params$friday_vehicle_gain)` higher on Friday, while the
+compound-treated wells are unchanged. Because viability is expressed relative
+to the plate's own vehicle, a day effect that lives only in the reference
+propagates straight into every normalised value on that plate.
+
+Two designs are simulated on the same plate layout, differing **only** in how
+run day is allocated:
+
+* **Confounded.** All CPD-A plates run on Friday, all CPD-B plates
+  on Monday. This is the realistic version of the mistake: the compounds are on
+  separate plates, so nothing stops them being scheduled on separate days.
+* **Blocked.** Run day is allocated by donor: both compounds of a
+  given donor are run on the same day, with four donors on Friday and four on
+  Monday. Compound is then orthogonal to day.
+
+# Packages
+
+```{r libraries}
+library(tidyverse)
+library(broom)
+library(patchwork)
+
+library(ribiosUtils)  # wellIndex2position, equateWellLabelWidth, ofactor, bound
+library(ribiosPlot)   # royalbluered, p2asterisk, openFileDevice, closeFileDevice
+
+set.seed(params$seed)
+dir.create(params$outdir, showWarnings = FALSE, recursive = TRUE)
+```
+
+# Design
+
+## Donors
+
+```{r donors}
+donors <- tibble(
+  donor_id    = c("HH-1071", "HH-1088", "HH-1122", "HH-1154",
+                  "HH-1188", "HH-1204", "HH-1263", "HH-1310"),
+  donor_sex   = c("F", "M", "F", "M", "M", "F", "F", "M"),
+  donor_age   = c(34L, 52L, 61L, 45L, 29L, 58L, 41L, 66L),
+  vehicle_rlu = c(2.10, 1.68, 2.44, 1.92, 2.28, 1.55, 2.02, 1.79) * 1e6,
+  blank_rlu   = 1.2e4
+) %>%
+  mutate(donor_id = ofactor(donor_id))
+
+donors
+```
+
+## Plate layout: one compound per plate
+
+This is the change that makes the confounding possible. With both compounds on
+one plate they are unavoidably run together; splitting them onto separate
+plates is what lets a scheduler put them on different days.
+
+| Columns | Content |
+|---|---|
+| 1 and 11 | vehicle, 0.1% DMSO |
+| 2 | lysis control, 100 µM digitonin (defines the assay floor) |
+| 3–10 | eight concentrations, 0.3 → 1000 µM |
+| 12 | no-cell blank (reagent + medium), defines the background |
+
+Rows A–H are eight replicate wells of the single compound on that plate.
+
+```{r plate-design}
+conc_series <- c(0.3, 1, 3, 10, 30, 100, 300, 1000)
+
+plate_design <- wellIndex2position(1:96, format = "96") %>%
+  as_tibble() %>%
+  rename(well_index = WellIndex, row = Row, column = Column) %>%
+  mutate(
+    well      = equateWellLabelWidth(paste0(row, column)),
+    is_edge   = row %in% c("A", "H") | column %in% c(1L, 12L),
+    well_type = case_when(
+      column %in% c(1L, 11L) ~ "vehicle",
+      column == 2L           ~ "lysis control",
+      column == 12L          ~ "no-cell blank",
+      TRUE                   ~ "test article"),
+    replicate  = if_else(well_type == "test article",
+                         match(row, LETTERS), NA_integer_),
+    conc_index = if_else(column >= 3L & column <= 10L, column - 2L, NA_integer_),
+    conc_uM    = case_when(
+      well_type == "test article"  ~ conc_series[conc_index],
+      well_type == "lysis control" ~ 100,
+      TRUE                         ~ 0),
+    row = ofactor(row))
+
+count(plate_design, well_type)
+```
+
+```{r plate-layout-view, fig.width=11, fig.height=4.4}
+layout_cols <- c("test article" = "grey92", "vehicle" = "#cfe3f5",
+                 "lysis control" = "#f7cfcb", "no-cell blank" = "#f3e2b0")
+
+p_layout <- plate_design %>%
+  mutate(label = case_when(
+    well_type == "test article"  ~ format(conc_uM, trim = TRUE, drop0trailing = TRUE),
+    well_type == "lysis control" ~ "dig",
+    well_type == "vehicle"       ~ "veh",
+    TRUE                         ~ "blk")) %>%
+  ggplot(aes(x = factor(column), y = fct_rev(row))) +
+  geom_tile(aes(fill = well_type), colour = "white", linewidth = 1.1) +
+  geom_text(aes(label = label), size = 4.5) +
+  scale_fill_manual(values = layout_cols, name = NULL) +
+  labs(title = "Plate layout — one compound per plate, eight replicate rows",
+       subtitle = "numbers are concentrations in µM",
+       x = "Column", y = "Row") +
+  theme_minimal(base_size = 15) +
+  theme(plot.title = element_text(face = "bold", size = 17),
+        plot.subtitle = element_text(size = 14),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.position = "bottom",
+        panel.grid = element_blank())
+
+p_layout
+```
+
+## Allocating the two run days
+
+Sixteen plates: eight donors × two compounds. Only the `weekday` column differs
+between the designs.
+
+```{r day-allocation}
+plates <- expand_grid(donor_id = donors$donor_id,
+                      compound = c("CPD-A", "CPD-B")) %>%
+  left_join(donors, by = "donor_id") %>%
+  mutate(donor_index = as.integer(donor_id))
+
+DESIGNS <- c("Blocked", "Confounded")   # referred to by name throughout
+
+schedule <- bind_rows(
+  ## day allocated by donor: both compounds of a donor run together
+  plates %>% mutate(design  = DESIGNS[1],
+                    weekday = if_else(donor_index <= 4L, "Friday", "Monday")),
+  ## day allocated by compound: perfectly aliased
+  plates %>% mutate(design  = DESIGNS[2],
+                    weekday = if_else(compound == "CPD-A", "Friday", "Monday"))
+) %>%
+  mutate(design   = factor(design, levels = DESIGNS),
+         weekday  = factor(weekday, levels = c("Friday", "Monday")),
+         plate_id = sprintf("%s_%s_%s", substr(as.character(design), 1, 1),
+                            str_remove(as.character(donor_id), "HH-"),
+                            str_remove(compound, "CPD-")))
+
+schedule %>% count(design, compound, weekday)
+```
+
+```{r design-view, fig.width=11, fig.height=4.2}
+day_cols <- c("Friday" = "#e07b39", "Monday" = "#4c8fbd")
+
+p_design <- schedule %>%
+  ggplot(aes(x = compound, y = fct_rev(donor_id), fill = weekday)) +
+  geom_tile(colour = "white", linewidth = 1.4) +
+  geom_text(aes(label = str_sub(weekday, 1, 3)), size = 4.8, colour = "white",
+            fontface = "bold") +
+  facet_wrap(~ design) +
+  scale_fill_manual(values = day_cols, name = NULL) +
+  labs(title = "Run-day allocation — the only difference between the designs",
+       subtitle = "left: day balanced across compounds · right: day perfectly aliased with compound",
+       x = NULL, y = "Donor") +
+  theme_minimal(base_size = 15) +
+  theme(plot.title = element_text(face = "bold", size = 17),
+        plot.subtitle = element_text(size = 14),
+        strip.text = element_text(size = 16, face = "bold"),
+        axis.text = element_text(size = 14),
+        legend.text = element_text(size = 14),
+        legend.position = "bottom",
+        panel.grid = element_blank())
+
+p_design
+```
+
+# Simulation
+
+Each donor draws its own IC~50~ around the reference value, log-normally. The
+same donor-level truth is used for both designs, so any difference between them
+comes from the day allocation alone.
+
+```{r truth}
+truth <- expand_grid(donor_id = donors$donor_id,
+                     compound = c("CPD-A", "CPD-B")) %>%
+  mutate(
+    ic50_ref  = if_else(compound == "CPD-A", params$ic50_A, params$ic50_B),
+    gsd       = if_else(compound == "CPD-A", params$gsd_A,  params$gsd_B),
+    hill      = if_else(compound == "CPD-A", params$hill_A, params$hill_B),
+    ic50_true = ic50_ref * rlnorm(n(), meanlog = 0, sdlog = log(gsd)),
+    ## perturbation 2: one donor is genuinely more sensitive to both compounds
+    sensitive = as.character(donor_id) == params$sensitive_donor,
+    ic50_true = if_else(sensitive, ic50_true * params$sensitive_factor, ic50_true))
+
+truth %>%
+  select(donor_id, compound, ic50_true) %>%
+  pivot_wider(names_from = compound, values_from = ic50_true) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 1)))
+```
+
+The day effect enters in exactly one place: on a Friday plate the **vehicle**
+wells are multiplied by `r 1 + params$friday_vehicle_gain`. Compound-treated
+wells, the lysis control and the blank are untouched.
+
+Three further sources of trouble are built in, all of them things that happen:
+
+1. **A technically failed plate** — `r params$failed_compound` on donor
+   `r params$failed_donor` receives too little reagent, so the whole plate reads
+   at `r scales::percent(params$failed_gain)` of normal with a much larger
+   well-to-well spread.
+2. **A genuinely sensitive donor** — `r params$sensitive_donor` has IC~50~
+   values `r scales::percent(1 - params$sensitive_factor)` lower for *both*
+   compounds. This is biology, not an error.
+3. **Unequal technical variance** — hepatocyte lots differ in plating
+   uniformity, so the well-to-well CV differs by donor; on top of that, the CV
+   grows as the signal approaches the assay floor.
+
+```{r noise-model}
+donor_noise <- tibble(
+  donor_id = donors$donor_id,
+  tech_cv  = c(0.045, 0.050, 0.115, 0.055, 0.060, 0.105, 0.050, 0.048))
+
+donor_noise %>% mutate(tech_cv = percentage(tech_cv))
+```
+
+```{r simulate}
+wells <- schedule %>%
+  select(design, plate_id, donor_id, donor_sex, donor_age, compound, weekday,
+         vehicle_rlu, blank_rlu) %>%
+  expand_grid(plate_design) %>%
+  left_join(truth %>% select(donor_id, compound, ic50_true, hill),
+            by = c("donor_id", "compound")) %>%
+  left_join(donor_noise, by = "donor_id") %>%
+  mutate(
+    viab_true = case_when(
+      well_type == "test article" ~ 1 / (1 + (conc_uM / ic50_true)^hill),
+      well_type == "vehicle"      ~ 1,
+      TRUE                        ~ 0),
+    ## the day effect lives only in the vehicle wells
+    day_gain = if_else(well_type == "vehicle" & weekday == "Friday",
+                       1 + params$friday_vehicle_gain, 1),
+    edge_factor = if_else(is_edge, 1 - params$edge_loss, 1),
+    ## perturbation 1: whole-plate technical failure
+    failed_plate = as.character(donor_id) == params$failed_donor &
+                   compound == params$failed_compound,
+    plate_gain = if_else(failed_plate, params$failed_gain, 1),
+    ## perturbation 3: CV depends on the lot and rises towards the assay floor
+    well_cv = tech_cv + params$floor_cv_gain * (1 - viab_true) +
+              if_else(failed_plate, params$failed_extra_cv, 0),
+    raw_rlu = if_else(
+      well_type == "no-cell blank",
+      blank_rlu * plate_gain * rnorm(n(), 1, 0.10),
+      (vehicle_rlu * day_gain * edge_factor * viab_true * rnorm(n(), 1, well_cv) +
+         blank_rlu * rnorm(n(), 1, 0.08)) * plate_gain),
+    raw_rlu = round(pmax(raw_rlu, 0)))
+```
+
+## Normalisation
+
+Per plate: background from the no-cell blanks, 100% from the **interior**
+vehicle wells. This is the correct procedure — and it is precisely what
+transmits the day effect, because the reference itself has moved.
+
+```{r normalise}
+ctg <- wells %>%
+  group_by(design, plate_id) %>%
+  mutate(
+    plate_blank_rlu        = median(raw_rlu[well_type == "no-cell blank"]),
+    plate_vehicle_interior = median(raw_rlu[well_type == "vehicle" & !is_edge]),
+    viability_pct = 100 * (raw_rlu - plate_blank_rlu) /
+                          (plate_vehicle_interior - plate_blank_rlu)) %>%
+  ungroup() %>%
+  select(design, plate_id, donor_id, donor_sex, donor_age, compound, weekday,
+         well, row, column, is_edge, well_type, conc_uM, replicate,
+         raw_rlu, plate_vehicle_interior, plate_blank_rlu, viability_pct,
+         ic50_true, failed_plate, tech_cv)
+
+write_csv(ctg, file.path(params$outdir, "ctg_phh_weekday_synthetic.csv"))
+glimpse(ctg)
+```
+
+## The day effect is visible in the vehicle wells alone
+
+This is the diagnostic you would actually run — it needs no compound data, and
+it works identically in both designs.
+
+```{r vehicle-diagnostic, fig.width=10, fig.height=5}
+vehicle_summary <- ctg %>%
+  filter(well_type == "vehicle", !is_edge, design == DESIGNS[1]) %>%
+  group_by(weekday) %>%
+  summarise(n = n(), median_rlu = median(raw_rlu), .groups = "drop")
+
+vehicle_summary %>%
+  mutate(relative = percentage(median_rlu / min(median_rlu) - 1, fmt = "+1.1"))
+
+p_vehicle <- ctg %>%
+  filter(well_type == "vehicle", !is_edge, design == DESIGNS[1]) %>%
+  ggplot(aes(weekday, raw_rlu / 1e6, fill = weekday)) +
+  geom_boxplot(width = 0.5, outlier.shape = NA, alpha = 0.7) +
+  geom_jitter(width = 0.12, size = 2.2, alpha = 0.7) +
+  scale_fill_manual(values = day_cols, guide = "none") +
+  labs(title = "Vehicle wells by run day",
+       subtitle = "the reference the whole plate is normalised against",
+       x = NULL, y = expression("Raw signal (10"^6~"RLU)")) +
+  theme_bw(base_size = 15) +
+  theme(plot.title = element_text(face = "bold", size = 17),
+        plot.subtitle = element_text(size = 14),
+        axis.text = element_text(size = 14))
+
+p_vehicle
+```
+
+# Plate quality control
+
+The QC criteria below are **pre-specified and endpoint-blind**: they use only
+the control wells, never the compound wells. That is what makes an exclusion
+defensible later.
+
+| Metric | Threshold |
+|---|---|
+| Z' factor (vehicle vs digitonin) | ≥ 0.50 |
+| Vehicle CV (interior wells) | ≤ 15% |
+| Signal window (vehicle / blank) | ≥ 10× |
+| Vehicle signal vs study median | within 0.5–2× |
+
+```{r plate-qc}
+zprime <- function(neg, pos) {
+  1 - 3 * (sd(neg) + sd(pos)) / abs(mean(neg) - mean(pos))
+}
+
+plate_qc <- ctg %>%
+  group_by(design, plate_id, donor_id, compound, weekday) %>%
+  summarise(
+    vehicle_median = median(raw_rlu[well_type == "vehicle" & !is_edge]),
+    vehicle_cv     = sd(raw_rlu[well_type == "vehicle" & !is_edge]) /
+                     mean(raw_rlu[well_type == "vehicle" & !is_edge]),
+    blank_median   = median(raw_rlu[well_type == "no-cell blank"]),
+    window         = vehicle_median / blank_median,
+    z_prime        = zprime(raw_rlu[well_type == "vehicle" & !is_edge],
+                            raw_rlu[well_type == "lysis control"]),
+    .groups = "drop") %>%
+  group_by(design) %>%
+  mutate(vehicle_rel = vehicle_median / median(vehicle_median)) %>%
+  ungroup() %>%
+  mutate(qc_pass = z_prime >= 0.5 & vehicle_cv <= 0.15 & window >= 10 &
+                   between(vehicle_rel, 0.5, 2))
+
+plate_qc %>%
+  filter(design == DESIGNS[1]) %>%
+  transmute(plate_id, donor_id, compound, weekday,
+            vehicle_rel = round(vehicle_rel, 2),
+            vehicle_cv  = percentage(vehicle_cv),
+            window      = round(window, 0),
+            z_prime     = round(z_prime, 2),
+            qc_pass) %>%
+  arrange(qc_pass, plate_id)
+```
+
+```{r qc-figure, fig.width=12, fig.height=5}
+p_qc <- plate_qc %>%
+  filter(design == DESIGNS[1]) %>%
+  pivot_longer(c(z_prime, vehicle_cv, vehicle_rel),
+               names_to = "metric", values_to = "value") %>%
+  mutate(metric = recode(metric,
+                         z_prime     = "Z' factor",
+                         vehicle_cv  = "Vehicle CV",
+                         vehicle_rel = "Vehicle signal / study median")) %>%
+  ggplot(aes(x = fct_reorder(plate_id, value), y = value, fill = qc_pass)) +
+  geom_col() +
+  geom_hline(data = tibble(metric = c("Z' factor", "Vehicle CV",
+                                      "Vehicle signal / study median"),
+                           yint = c(0.5, 0.15, 0.5)),
+             aes(yintercept = yint), linetype = "dashed", colour = "grey30") +
+  facet_wrap(~ metric, scales = "free_x") +
+  coord_flip() +
+  scale_fill_manual(values = c(`TRUE` = "#3b7a57", `FALSE` = "#a33"),
+                    name = "QC pass") +
+  labs(title = "Pre-specified plate QC (blocked design)",
+       subtitle = "control wells only - the compound data are never inspected at this stage",
+       x = NULL, y = NULL) +
+  theme_bw(base_size = 15) +
+  theme(plot.title = element_text(face = "bold", size = 17),
+        plot.subtitle = element_text(size = 14),
+        strip.text = element_text(size = 14, face = "bold"),
+        axis.text = element_text(size = 12),
+        legend.text = element_text(size = 14))
+
+p_qc
+```
+
+One plate fails, and it is the one that was simulated to fail:
+
+```{r qc-caught}
+plate_qc %>% filter(!qc_pass) %>% select(design, plate_id, donor_id, compound,
+                                         z_prime, vehicle_cv, vehicle_rel)
+```
+
+Note what the failure does *not* do. Because the whole plate is scaled down,
+normalising to that plate's own vehicle removes the gain almost completely —
+the fitted IC~50~ is not strongly biased, it is simply imprecise. QC catches it
+through **variance**, not through the mean. A partial failure (one column of
+tips blocked) would be the opposite case: it biases the curve shape while
+leaving the control wells intact, and is caught by curve-shape checks
+(monotonicity, upper asymptote) rather than by Z'.
+
+# Curve fitting
+
+A four-parameter logistic on log~10~ concentration per plate. Two IC~50~
+definitions are extracted, and the difference between them matters here:
+
+* **Absolute IC~50~** — the concentration giving 50% of the *vehicle* signal.
+  This is the usual reported value and it inherits any shift in the vehicle
+  reference.
+* **Relative IC~50~** — the midpoint between the fitted upper and lower
+  asymptotes, i.e. `xmid`. A uniform scaling of the whole curve is absorbed by
+  the upper asymptote, so this estimate is immune to it.
+
+```{r fit}
+fit_fpl <- function(df) {
+  d <- df %>%
+    group_by(conc_uM) %>%
+    summarise(viability = mean(viability_pct), .groups = "drop") %>%
+    mutate(logc = log10(conc_uM))
+  nls(viability ~ SSfpl(logc, A, B, xmid, scal), data = d)
+}
+safe_fit <- possibly(fit_fpl, otherwise = NULL)
+
+abs_ic50 <- function(fit) {
+  if (is.null(fit)) return(NA_real_)
+  cf <- coef(fit)
+  A <- cf[["A"]]; B <- cf[["B"]]; xmid <- cf[["xmid"]]; scal <- cf[["scal"]]
+  if (!(A > 50 && B < 50)) return(NA_real_)
+  10^(xmid - scal * log((B - 50) / (50 - A)))
+}
+rel_ic50 <- function(fit) {
+  if (is.null(fit)) return(NA_real_)
+  10^(coef(fit)[["xmid"]])
+}
+top_asym <- function(fit) if (is.null(fit)) NA_real_ else coef(fit)[["A"]]
+
+xmid_se <- function(fit) {
+  if (is.null(fit)) return(NA_real_)
+  summary(fit)$coefficients["xmid", "Std. Error"]
+}
+
+fits <- ctg %>%
+  filter(well_type == "test article") %>%
+  nest(data = -c(design, plate_id, donor_id, compound, weekday)) %>%
+  mutate(fit          = map(data, safe_fit),
+         ic50_abs     = map_dbl(fit, abs_ic50),
+         ic50_rel     = map_dbl(fit, rel_ic50),
+         top_pct      = map_dbl(fit, top_asym),
+         se_log_ic50  = map_dbl(fit, xmid_se)) %>%
+  left_join(plate_qc %>% select(design, plate_id, qc_pass, z_prime, vehicle_cv),
+            by = c("design", "plate_id"))
+
+ic50_tbl <- fits %>%
+  select(design, plate_id, donor_id, compound, weekday, ic50_abs, ic50_rel,
+         top_pct, se_log_ic50, qc_pass) %>%
+  left_join(truth %>% select(donor_id, compound, ic50_true),
+            by = c("donor_id", "compound")) %>%
+  arrange(design, compound, donor_id)
+
+write_csv(ic50_tbl, file.path(params$outdir, "ctg_phh_weekday_ic50.csv"))
+ic50_tbl %>% mutate(across(where(is.numeric), ~ round(.x, 2))) %>% head(10)
+```
+
+The fitted upper asymptote already tells the story: on Friday plates the curve
+tops out near
+`r round(100 / (1 + params$friday_vehicle_gain))`%, not 100%.
+
+```{r top-asymptote}
+ic50_tbl %>%
+  filter(qc_pass) %>%
+  group_by(weekday) %>%
+  summarise(mean_top_pct = round(mean(top_pct, na.rm = TRUE), 1),
+            n = n(), .groups = "drop")
+```
+
+# Consequences of the two designs
+
+The day-effect analysis below uses **QC-passing plates only**; the failed plate
+is dealt with in its own section.
+
+```{r gm-helpers}
+ic50_qc <- ic50_tbl %>% filter(qc_pass)
+
+gm  <- function(x) exp(mean(log(x), na.rm = TRUE))
+gsd <- function(x) exp(sd(log(x), na.rm = TRUE))
+true_sep <- params$ic50_B / params$ic50_A
+```
+
+## Recovered potency
+
+```{r recovery-table}
+recovery <- ic50_qc %>%
+  group_by(design, compound) %>%
+  summarise(GM_absolute = gm(ic50_abs),
+            GM_relative = gm(ic50_rel),
+            GM_true     = gm(ic50_true), .groups = "drop") %>%
+  mutate(bias_absolute = percentage(GM_absolute / GM_true - 1, fmt = "+1.1"),
+         bias_relative = percentage(GM_relative / GM_true - 1, fmt = "+1.1"),
+         across(starts_with("GM"), ~ round(.x, 1)))
+
+recovery
+```
+
+## Apparent separation between the compounds
+
+The quantity the study exists to estimate.
+
+```{r separation}
+separation <- ic50_qc %>%
+  select(design, donor_id, compound, ic50_abs, ic50_rel) %>%
+  pivot_wider(names_from = compound, values_from = c(ic50_abs, ic50_rel)) %>%
+  mutate(sep_absolute = `ic50_abs_CPD-B` / `ic50_abs_CPD-A`,
+         sep_relative = `ic50_rel_CPD-B` / `ic50_rel_CPD-A`)
+
+sep_summary <- separation %>%
+  group_by(design) %>%
+  summarise(GM_separation_absolute = gm(sep_absolute),
+            GM_separation_relative = gm(sep_relative),
+            .groups = "drop") %>%
+  mutate(true_separation = true_sep,
+         inflation = percentage(GM_separation_absolute / true_sep - 1,
+                                fmt = "+1.1"),
+         across(where(is.numeric), ~ round(.x, 2)))
+
+sep_summary
+```
+
+## Is the day effect estimable at all?
+
+The decisive difference. In the blocked design, compound and weekday are
+separate columns of the model matrix and both coefficients are estimated. In
+the confounded design they are perfectly aliased, and `lm` returns `NA` for the
+second term — R is telling you the design cannot answer the question.
+
+```{r aliasing}
+model_tbl <- ic50_qc %>%
+  mutate(log_ic50 = log10(ic50_abs))
+
+fit_blocked <- lm(log_ic50 ~ compound + weekday,
+                  data = filter(model_tbl, design == DESIGNS[1]))
+fit_confounded <- lm(log_ic50 ~ compound + weekday,
+                     data = filter(model_tbl, design == DESIGNS[2]))
+
+bind_rows(
+  tidy(fit_blocked)    %>% mutate(design = DESIGNS[1]),
+  tidy(fit_confounded) %>% mutate(design = DESIGNS[2])
+) %>%
+  select(design, term, estimate, std.error, p.value) %>%
+  mutate(across(where(is.numeric), ~ signif(.x, 3)))
+
+## the aliasing, stated explicitly
+alias(fit_confounded)
+```
+
+# Figures
+
+```{r results-figure, fig.width=17, fig.height=11}
+theme_ctg <- theme_bw(base_size = 15) +
+  theme(plot.title = element_text(face = "bold", size = 17),
+        plot.subtitle = element_text(size = 14),
+        axis.title = element_text(size = 16),
+        axis.text = element_text(size = 14),
+        strip.text = element_text(size = 15, face = "bold"),
+        legend.text = element_text(size = 14),
+        legend.title = element_blank(),
+        panel.grid.minor = element_blank())
+
+cpd_cols <- c("CPD-A" = "#1f6fb4", "CPD-B" = "#c1443b")
+
+grid <- tibble(logc = seq(log10(0.2), log10(1500), length.out = 200))
+curves <- fits %>%
+  filter(!map_lgl(fit, is.null)) %>%
+  mutate(pred = map(fit, ~ mutate(grid, viability = predict(.x, newdata = grid)))) %>%
+  select(design, donor_id, compound, weekday, pred) %>%
+  unnest(pred) %>%
+  mutate(conc_uM = 10^logc)
+
+## A: curves, faceted by design
+pA <- ggplot(curves, aes(conc_uM, viability, colour = compound)) +
+  geom_line(aes(group = interaction(donor_id, compound)), alpha = 0.7,
+            linewidth = 0.8) +
+  facet_wrap(~ design) +
+  geom_hline(yintercept = 50, linetype = "dashed", colour = "grey40") +
+  geom_hline(yintercept = 100, linetype = "dotted", colour = "grey60") +
+  scale_x_log10(labels = scales::label_number(drop0trailing = TRUE)) +
+  scale_colour_manual(values = cpd_cols) +
+  coord_cartesian(ylim = c(-5, 118)) +
+  labs(title = "A  Concentration–response by design",
+       subtitle = "in the confounded design every CPD-A curve tops out below 100%",
+       x = "Concentration (µM)", y = "ATP (% of vehicle)") +
+  theme_ctg + theme(legend.position = "bottom")
+
+## B: absolute IC50 vs truth
+pB <- ic50_qc %>%
+  ggplot(aes(ic50_true, ic50_abs, colour = compound, shape = weekday)) +
+  geom_abline(slope = 1, intercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_point(size = 3.6, alpha = 0.9) +
+  facet_wrap(~ design) +
+  scale_x_log10() + scale_y_log10() +
+  scale_colour_manual(values = cpd_cols) +
+  labs(title = "B  Recovered vs simulated IC50 (absolute)",
+       subtitle = "points below the diagonal are biased toward apparent toxicity",
+       x = expression("Simulated IC"[50]~"(µM)"),
+       y = expression("Fitted IC"[50]~"(µM)")) +
+  theme_ctg + theme(legend.position = "bottom")
+
+## C: per-donor separation
+pC <- separation %>%
+  ggplot(aes(design, sep_absolute)) +
+  geom_hline(yintercept = true_sep, linetype = "dashed", colour = "grey30",
+             linewidth = 0.9) +
+  geom_line(aes(group = donor_id), colour = "grey75", linewidth = 0.6) +
+  geom_point(aes(colour = design), size = 4, show.legend = FALSE) +
+  stat_summary(fun = gm, fun.min = gm, fun.max = gm, geom = "crossbar",
+               width = 0.4, linewidth = 0.8, colour = "grey20") +
+  annotate("text", x = 0.6, y = true_sep * 1.06,
+           label = sprintf("true separation %.0f×", true_sep),
+           hjust = 0, size = 5, colour = "grey25") +
+  scale_colour_manual(values = setNames(c("#3b7a57", "#a33"), DESIGNS)) +
+  scale_y_log10() +
+  labs(title = "C  Apparent CPD-B / CPD-A separation, per donor",
+       x = NULL, y = "Fold separation (absolute IC50)") +
+  theme_ctg
+
+## D: absolute vs relative IC50 bias
+pD <- ic50_qc %>%
+  pivot_longer(c(ic50_abs, ic50_rel), names_to = "metric", values_to = "ic50") %>%
+  mutate(metric = recode(metric, ic50_abs = "absolute IC50",
+                         ic50_rel = "relative IC50"),
+         rel_bias = ic50 / ic50_true - 1) %>%
+  ggplot(aes(metric, rel_bias, fill = weekday)) +
+  geom_hline(yintercept = 0, linetype = "dashed", colour = "grey40") +
+  geom_boxplot(width = 0.55, alpha = 0.8, outlier.shape = NA) +
+  facet_wrap(~ design) +
+  scale_fill_manual(values = day_cols) +
+  scale_y_continuous(labels = scales::percent) +
+  labs(title = "D  Bias of the two IC50 definitions",
+       subtitle = "the relative IC50 absorbs the vehicle shift into the upper asymptote",
+       x = NULL, y = "Relative bias vs simulated truth") +
+  theme_ctg + theme(legend.position = "bottom")
+
+fig <- (pA | pB) / (pC | pD)
+fig
+```
+
+```{r export-figures}
+openFileDevice(file.path(params$outdir, "ctg_weekday_results.pdf"),
+               width = 17, height = 11)
+print(fig)
+closeFileDevice()
+
+openFileDevice(file.path(params$outdir, "ctg_weekday_design.pdf"),
+               width = 11, height = 4.2)
+print(p_design)
+closeFileDevice()
+
+openFileDevice(file.path(params$outdir, "ctg_plate_layout.pdf"),
+               width = 11, height = 4.4)
+print(p_layout)
+closeFileDevice()
+```
+
+# Handling the three perturbations
+
+Everything below uses the **blocked** design, so the run-day issue is out of
+the way and the three perturbations can be looked at on their own.
+
+```{r blocked-subset}
+blocked <- ic50_tbl %>% filter(design == DESIGNS[1])
+failed_donors <- blocked %>% filter(!qc_pass) %>% pull(donor_id) %>% as.character()
+failed_donors
+```
+
+## Perturbation 1 — the technically failed plate
+
+Three defensible ways to handle it, and one indefensible one (dropping it
+because the number looked wrong).
+
+```{r failed-plate-scenarios}
+scenarios <- bind_rows(
+  blocked %>% mutate(scenario = "1. keep everything"),
+  blocked %>% filter(qc_pass) %>% mutate(scenario = "2. drop the failed plate"),
+  blocked %>% filter(!as.character(donor_id) %in% failed_donors) %>%
+    mutate(scenario = "3. drop the whole donor")
+) %>%
+  mutate(scenario = ofactor(scenario))
+
+scenario_summary <- scenarios %>%
+  group_by(scenario, compound) %>%
+  summarise(n_plates = sum(!is.na(ic50_rel)),
+            GM_IC50  = gm(ic50_rel),
+            GSD      = gsd(ic50_rel), .groups = "drop") %>%
+  mutate(across(c(GM_IC50, GSD), ~ round(.x, 2)))
+
+scenario_summary
+```
+
+The paired contrast is where the difference bites: dropping a single plate
+leaves that donor with one compound only, so it contributes to the
+compound-level means but not to the pairing.
+
+```{r failed-plate-separation}
+sep_scenarios <- scenarios %>%
+  select(scenario, donor_id, compound, ic50_rel) %>%
+  pivot_wider(names_from = compound, values_from = ic50_rel) %>%
+  mutate(ratio = `CPD-B` / `CPD-A`) %>%
+  group_by(scenario) %>%
+  summarise(n_donors_with_both = sum(!is.na(ratio)),
+            GM_separation = gm(ratio),
+            GSD_separation = gsd(ratio),
+            .groups = "drop") %>%
+  mutate(true_separation = true_sep,
+         across(where(is.numeric), ~ round(.x, 2)))
+
+sep_scenarios
+```
+
+Keeping the failed plate does not shift the point estimate much — the
+whole-plate gain cancels in the normalisation — but it inflates the spread,
+because that plate's IC~50~ carries a standard error several times larger than
+the others. Dropping the plate is the right call, and it is the *QC rule*, not
+the IC~50~, that justifies it.
+
+## Perturbation 2 — the sensitive donor
+
+Donor `r params$sensitive_donor` is `r scales::percent(1 - params$sensitive_factor)`
+more sensitive to both compounds. A routine outlier test will happily flag it.
+
+```{r grubbs}
+grubbs <- function(x, alpha = 0.05) {
+  x <- x[!is.na(x)]; n <- length(x)
+  G <- max(abs(x - mean(x))) / sd(x)
+  tcrit <- qt(alpha / (2 * n), df = n - 2)
+  Gcrit <- (n - 1) / sqrt(n) * sqrt(tcrit^2 / (n - 2 + tcrit^2))
+  tibble(n = n, G = G, G_crit = Gcrit, flagged = G > Gcrit,
+         extreme = names(which.max(abs(x - mean(x)))))
+}
+
+blocked %>%
+  filter(qc_pass) %>%
+  group_by(compound) %>%
+  group_modify(~ grubbs(setNames(log10(.x$ic50_rel), as.character(.x$donor_id)))) %>%
+  ungroup() %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+```
+
+What removing it would do:
+
+```{r sensitive-donor-effect}
+with_without <- bind_rows(
+  blocked %>% filter(qc_pass) %>% mutate(set = "all donors"),
+  blocked %>% filter(qc_pass,
+                     as.character(donor_id) != params$sensitive_donor) %>%
+    mutate(set = "sensitive donor removed")
+) %>%
+  group_by(set, compound) %>%
+  summarise(n = n(), GM_IC50 = gm(ic50_rel), GSD = gsd(ic50_rel),
+            most_sensitive_donor_IC50 = min(ic50_rel, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+
+with_without
+```
+
+And what it does to the quantity the study is actually estimating:
+
+```{r sensitive-donor-ratio}
+blocked %>%
+  filter(qc_pass) %>%
+  select(donor_id, compound, ic50_rel) %>%
+  pivot_wider(names_from = compound, values_from = ic50_rel) %>%
+  mutate(ratio = `CPD-B` / `CPD-A`,
+         sensitive = as.character(donor_id) == params$sensitive_donor) %>%
+  arrange(desc(sensitive)) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 2)))
+```
+
+Because the donor is shifted on *both* compounds, the within-donor ratio is
+untouched. The pairing absorbs the donor entirely — which is the strongest
+practical argument for testing both compounds in every donor.
+
+## Perturbation 3 — unequal technical variance
+
+Replicate spread is not constant: it differs between hepatocyte lots and it
+grows as the signal falls towards the assay floor.
+
+```{r variance-structure}
+rep_stats <- ctg %>%
+  filter(design == DESIGNS[1], well_type == "test article") %>%
+  group_by(donor_id, compound, conc_uM) %>%
+  summarise(mean_viab = mean(viability_pct),
+            sd_viab   = sd(viability_pct),
+            n = n(), .groups = "drop") %>%
+  left_join(donor_noise, by = "donor_id") %>%
+  mutate(lot = if_else(tech_cv > 0.08, "high-variance lot", "standard lot"))
+
+rep_stats %>%
+  group_by(lot) %>%
+  summarise(median_sd = round(median(sd_viab, na.rm = TRUE), 2),
+            n_conditions = n(), .groups = "drop")
+```
+
+### Weighting the fit instead of discarding data
+
+```{r weighted-fit}
+fit_fpl_weighted <- function(df) {
+  d <- df %>%
+    group_by(conc_uM) %>%
+    summarise(viability = mean(viability_pct),
+              s = sd(viability_pct), n = n(), .groups = "drop") %>%
+    mutate(logc = log10(conc_uM), w = n / pmax(s, 1)^2)
+  nls(viability ~ SSfpl(logc, A, B, xmid, scal), data = d, weights = w)
+}
+safe_fit_w <- possibly(fit_fpl_weighted, otherwise = NULL)
+
+weighted_tbl <- ctg %>%
+  filter(design == DESIGNS[1], well_type == "test article") %>%
+  nest(data = -c(plate_id, donor_id, compound)) %>%
+  mutate(fit_w      = map(data, safe_fit_w),
+         ic50_w     = map_dbl(fit_w, rel_ic50),
+         se_w       = map_dbl(fit_w, xmid_se)) %>%
+  select(plate_id, donor_id, compound, ic50_w, se_w) %>%
+  left_join(blocked %>% select(plate_id, ic50_rel, se_log_ic50, qc_pass,
+                               ic50_true),
+            by = "plate_id") %>%
+  filter(qc_pass)
+
+weighted_tbl %>%
+  group_by(compound) %>%
+  summarise(median_se_unweighted = round(median(se_log_ic50, na.rm = TRUE), 4),
+            median_se_weighted   = round(median(se_w, na.rm = TRUE), 4),
+            median_abs_error_unweighted =
+              round(median(abs(log10(ic50_rel / ic50_true)), na.rm = TRUE), 4),
+            median_abs_error_weighted =
+              round(median(abs(log10(ic50_w / ic50_true)), na.rm = TRUE), 4),
+            .groups = "drop")
+```
+
+### Separating biological from technical variability
+
+The across-donor GSD everyone quotes is a *sum* of real donor differences and
+assay noise. With a per-plate standard error in hand, the two can be separated
+by moments: `Var(log IC50) = Var_biological + mean(SE²)`.
+
+```{r variance-decomposition}
+var_decomp <- blocked %>%
+  filter(qc_pass) %>%
+  group_by(compound) %>%
+  summarise(var_total = var(log10(ic50_rel), na.rm = TRUE),
+            var_technical = mean(se_log_ic50^2, na.rm = TRUE),
+            .groups = "drop") %>%
+  mutate(var_biological = pmax(var_total - var_technical, 0),
+         GSD_observed   = 10^sqrt(var_total),
+         GSD_biological = 10^sqrt(var_biological),
+         technical_share = percentage(var_technical / var_total))
+
+var_decomp %>% mutate(across(where(is.numeric), ~ round(.x, 3)))
+```
+
+### A variance-weighted estimate of the separation
+
+```{r weighted-separation}
+pairs_tbl <- blocked %>%
+  filter(qc_pass) %>%
+  select(donor_id, compound, ic50_rel, se_log_ic50) %>%
+  pivot_wider(names_from = compound,
+              values_from = c(ic50_rel, se_log_ic50)) %>%
+  filter(!is.na(`ic50_rel_CPD-A`), !is.na(`ic50_rel_CPD-B`)) %>%
+  mutate(d = log10(`ic50_rel_CPD-B`) - log10(`ic50_rel_CPD-A`),
+         v = `se_log_ic50_CPD-A`^2 + `se_log_ic50_CPD-B`^2,
+         w = 1 / v)
+
+unw <- mean(pairs_tbl$d)
+wtd <- weighted.mean(pairs_tbl$d, pairs_tbl$w)
+
+tibble(estimator = c("unweighted", "inverse-variance weighted"),
+       log10_separation = c(unw, wtd),
+       fold_separation = 10^c(unw, wtd),
+       true_fold = true_sep) %>%
+  mutate(across(where(is.numeric), ~ round(.x, 3)))
+```
+
+# Figures for the perturbations
+
+```{r perturbation-figure, fig.width=17, fig.height=11}
+## E: variance is not constant
+pE <- rep_stats %>%
+  ggplot(aes(mean_viab, sd_viab, colour = lot)) +
+  geom_point(size = 2.6, alpha = 0.75) +
+  geom_smooth(method = "loess", se = FALSE, linewidth = 1.1, span = 1) +
+  scale_colour_manual(values = c("high-variance lot" = "#c1443b",
+                                 "standard lot" = "#1f6fb4")) +
+  labs(title = "E  Replicate spread depends on lot and on signal level",
+       subtitle = "equal-weight fitting treats all of these points as equally informative",
+       x = "Mean viability of the condition (% of vehicle)",
+       y = "SD across replicate wells") +
+  theme_ctg + theme(legend.position = "bottom")
+
+## F: what each exclusion scenario does to the paired separation
+pF <- scenarios %>%
+  select(scenario, donor_id, compound, ic50_rel) %>%
+  pivot_wider(names_from = compound, values_from = ic50_rel) %>%
+  mutate(ratio = `CPD-B` / `CPD-A`) %>%
+  filter(!is.na(ratio)) %>%
+  ggplot(aes(scenario, ratio)) +
+  geom_hline(yintercept = true_sep, linetype = "dashed", colour = "grey30",
+             linewidth = 0.9) +
+  geom_point(size = 3.4, alpha = 0.8, colour = "#3b7a57") +
+  stat_summary(fun = gm, fun.min = gm, fun.max = gm, geom = "crossbar",
+               width = 0.4, colour = "grey20") +
+  scale_y_log10() +
+  labs(title = "F  Effect of each exclusion rule on the paired separation",
+       subtitle = sprintf("dashed line = true %.0f-fold separation", true_sep),
+       x = NULL, y = "CPD-B / CPD-A (per donor)") +
+  theme_ctg +
+  theme(axis.text.x = element_text(angle = 20, hjust = 1, size = 13))
+
+## G: the sensitive donor in context
+pG <- blocked %>%
+  filter(qc_pass) %>%
+  mutate(group = case_when(
+    as.character(donor_id) == params$sensitive_donor ~ "sensitive donor",
+    TRUE ~ "other donors")) %>%
+  ggplot(aes(x = fct_reorder(donor_id, ic50_rel), y = ic50_rel,
+             colour = compound, shape = group)) +
+  geom_point(size = 4.2) +
+  scale_shape_manual(values = c("sensitive donor" = 17, "other donors" = 16)) +
+  scale_colour_manual(values = cpd_cols) +
+  scale_y_log10() +
+  labs(title = "G  Donor sensitivity is real, and it is correlated across compounds",
+       subtitle = "the low donor is low for both compounds, so the ratio is unaffected",
+       x = "Donor", y = expression("Relative IC"[50]~"(µM)")) +
+  theme_ctg +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 13),
+        legend.position = "bottom")
+
+## H: variance decomposition
+pH <- var_decomp %>%
+  select(compound, var_biological, var_technical) %>%
+  pivot_longer(-compound, names_to = "source", values_to = "variance") %>%
+  mutate(source = recode(source, var_biological = "biological",
+                         var_technical = "technical")) %>%
+  ggplot(aes(compound, variance, fill = source)) +
+  geom_col(width = 0.6) +
+  scale_fill_manual(values = c(biological = "#3b7a57", technical = "#d9a441")) +
+  labs(title = "H  What the across-donor spread is made of",
+       subtitle = "the quoted GSD mixes donor biology with assay noise",
+       x = NULL, y = expression("Variance of log"[10]~"IC"[50])) +
+  theme_ctg + theme(legend.position = "bottom")
+
+fig2 <- (pE | pF) / (pG | pH)
+fig2
+```
+
+```{r export-perturbation-figure}
+openFileDevice(file.path(params$outdir, "ctg_perturbations.pdf"),
+               width = 17, height = 11)
+print(fig2)
+closeFileDevice()
+
+openFileDevice(file.path(params$outdir, "ctg_plate_qc.pdf"),
+               width = 12, height = 5)
+print(p_qc)
+closeFileDevice()
+```
+
+# Remove, keep, or model?
+
+The three perturbations look superficially similar — each produces values that
+sit away from the rest — and they call for three different responses.
+
+**The failed plate: remove it, on a rule written beforehand.** The exclusion is
+justified by control wells (Z', vehicle CV, signal window), not by the IC~50~.
+That ordering is the whole point: a rule applied before the endpoint is seen
+cannot be tuned, consciously or otherwise, to produce a preferred answer. Write
+the thresholds into the protocol, report how many plates failed and why, and
+keep the raw data in the deposited dataset with the flag attached rather than
+silently deleting the rows. Where the failed plate belongs to a paired design,
+prefer dropping the plate and using an estimator that tolerates the imbalance
+over dropping the whole donor — throwing away a perfectly good CPD-A plate to
+preserve symmetry costs information for no gain, unless the analysis is a
+strictly paired test.
+
+**The sensitive donor: keep it.** Grubbs flags it, and Grubbs is answering the
+wrong question. The test asks whether the value is improbable under an assumed
+distribution; it cannot tell you whether the value is *wrong*. Nothing in the
+QC record marks that plate as abnormal, the donor is shifted coherently on both
+compounds, and a lot that is genuinely more sensitive is exactly the
+observation a safety margin should be built on. Removing it shrinks the
+reported GSD, which looks like a cleaner result while actually deleting the
+information that mattered. If a donor must be set aside, the reason has to be
+technical and documented — not "it was an outlier".
+
+**Unequal variance: model it, do not prune it.** Heteroscedasticity is not
+contamination; it is a property of the assay. The noisy lots still carry
+information, just less of it per well, and the fix is to weight accordingly:
+weighted nls within a plate, inverse-variance weighting across donors. The more
+consequential habit is to stop quoting a bare across-donor GSD. Once the
+per-plate standard errors are available, splitting that spread into biological
+and technical components takes one line and changes how the number should be
+read — a GSD that is largely technical is an argument for more replicates, not
+for a wider safety factor.
+
+**A rule of thumb that covers all three.** Decide the question first: is the
+value *implausible given the controls*, or merely *inconvenient given the
+hypothesis*? The first is a QC exclusion; the second is data manipulation. In
+practice, running the analysis both ways and reporting both is cheap — every
+scenario table above is three lines of `dplyr` — and a result that survives
+both is worth considerably more than one that requires a particular exclusion.
+
+# What the design simulation shows
+
+* **The bias is predictable in size.** A vehicle reference inflated by a factor
+  *g* scales every normalised viability on that plate by 1/*g*. For a 4PL with
+  Hill slope *h*, the absolute IC~50~ moves by a factor
+  ((2/*g*) − 1)^1/h^ — about
+  `r round(((2 / (1 + params$friday_vehicle_gain)) - 1)^(1 / params$hill_A), 3)`
+  for CPD-A and
+  `r round(((2 / (1 + params$friday_vehicle_gain)) - 1)^(1 / params$hill_B), 3)`
+  for CPD-B at the simulated `r scales::percent(params$friday_vehicle_gain)`
+  gain. Nothing about the compounds changed.
+* **Confounding turns that bias into a conclusion.** With CPD-A on Friday and
+  CPD-B on Monday, only CPD-A is deflated, so the apparent separation is
+  inflated above the true `r round(true_sep, 1)`-fold. The result looks like
+  sharper discrimination between the compounds, which is exactly the kind of
+  error that survives review.
+* **Blocking does not remove the bias — it removes the confounding.** In the
+  blocked design both compounds are equally affected on Friday plates, so the
+  contrast is unbiased even though individual absolute IC~50~ values on those
+  plates still are. Day becomes an estimable nuisance term rather than an
+  invisible one.
+* **`alias()` is the check worth running.** Before the assay, not after: if a
+  term drops out of the model matrix, no amount of analysis recovers it.
+* **The upper asymptote is a free diagnostic.** A fitted top well below 100%
+  when the compound has a true no-effect plateau points at the vehicle
+  reference, not at the compound. Reporting the relative IC~50~ alongside the
+  absolute one makes the discrepancy visible.
+* **Stronger still: block within the plate.** Putting both compounds on the same
+  plate, as in the shared-plate layout, makes the day effect cancel exactly in
+  the compound contrast, because both arms then share one vehicle reference.
+  The separate-plate layout used here is the weakest arrangement that can still
+  be salvaged by scheduling.
+
+# Session information
+
+```{r session}
+sessionInfo()
+```
