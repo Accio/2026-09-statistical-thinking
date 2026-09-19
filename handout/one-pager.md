@@ -2,16 +2,12 @@
 
 Jitao David Zhang and Christian Weinmann, September 2026
 
-## Background
-
-The three-hour workshop, consisting of nine 15-minute modules, aims to help you become familiar with statistical thinking, and prepare you to ask questions that lead to better experimental design and data analysis.
-
-## Agenda
+The workshop, consisting of nine 15-minute modules, aims to help you become familiar with statistical thinking. We learn how to ask questions that lead to better experimental design and data analysis.
 
 ::: {.agenda}
 
 **Module I**: What questions are we asking, and what is the minimal difference that we care about?
-:   We act in the order of question, threshold, experiment, and statistics, not the reverse.
+:   We follow the order of question, threshold, experiment, and statistics, not the reverse.
 
 **Module II**: What types of variation are there?
 :   Usually we are interested in biological and compound-induced variation. Technical variation is sometimes interesting, and sometimes needs to be minimized. We often need a balance between variation and bias.
@@ -20,13 +16,13 @@ The three-hour workshop, consisting of nine 15-minute modules, aims to help you 
 :   Biological replicates help us quantify variability between individual humans, animals, or cell cultures, while technical replicates help us quantify variability between parallel measurements. Which of them counts as the independent unit depends on the question, and that choice sets the level at which the data should be analyzed.
 
 **Module IV**: What are randomization and blocking, and why are they important for experimental design?
-:   If you have to compare A and B in an experiment run in two batches, test both A and B within each batch, instead of testing A in one batch and B in the other: this is the essence of *blocking*. When multiple factors may affect the outcome, block those you can, and randomize the rest.
+:   If you have to compare A and B in an experiment run in two batches, test both A and B within each batch, instead of testing A in one batch and B in the other: This is the essence of *blocking*. When multiple factors may affect the outcome, block those you can, and randomize the rest.
 
 **Module V**: How do we compare two groups?
 :   While we are interested in the population, we only have samples and their measurements. Commonly used tools include the unpaired t-test, the paired t-test, and non-parametric tests. For more complex designs, we can use ANOVA (multiple groups) and linear regression (adjusting for covariates).
 
 **Module VI**: How do we detect and handle outliers?
-:   Use common sense, your experience and observations, and prior knowledge or data to judge whether a value is an outlier. State the reasons explicitly, and in case of doubt, run statistical analyses with and without the outliers to test the sensitivity of your conclusion.
+:   Use common sense, your experience, and prior knowledge or data to judge whether a value is an outlier. State the reasons explicitly, and in case of doubt, run statistical analyses with and without the outliers to test the sensitivity of your conclusion.
 
 **Module VII**: What do we mean by p-values, effect sizes, and confidence intervals?
 :   In the context of a two-group comparison, the null hypothesis is that there is no difference at the population level. When we apply t-tests to sample measurements, we get the p-value, which is the probability of observing a difference at least as large as ours, *given that the null hypothesis is true*. The p-value only tells you something about whether there might be a difference at the population level, but not about how large it is: effect size matters. A confidence interval is an educated guess at the range of the effect size. Its meaning can only be understood by repeating the statistical procedure many times.
@@ -36,24 +32,6 @@ The three-hour workshop, consisting of nine 15-minute modules, aims to help you 
 
 **Module IX**: How can I learn more and get help if I am stuck?
 :   We will recommend resources, share useful prompts for AI, and offer to consult with you.
-
 :::
 
-## Ten questions to ask before designing an experiment or analyzing a data set
-
-::: {.checklist}
-
-1. What exactly is the question, and what difference would matter?
-2. What population do I want to generalize to?
-3. What is my independent experimental unit?
-4. Which sources of variation do I block, randomize, or minimize?
-5. Does my plot reflect the experimental structure?
-6. Have I estimated the effect *and* its uncertainty?
-7. Does the test match the design?
-8. How do I plan to deal with surprising values and, if necessary, mark them as outliers?
-9. Am I deciding on effect size and context, instead of on the *p*-value alone?
-10. Can I improve my design and analysis by letting AI criticize it and by consulting a colleague?
-
-:::
-
-Thank you for joining the workshop. We welcome oral and written criticism, suggestions, and feedback!
+Thank you for joining the workshop. We welcome criticism, suggestions, and feedback!

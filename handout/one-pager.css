@@ -1,18 +1,21 @@
 /* One A4 page.
    The agenda is a definition list: each module is a question (dt) and its
    answer (dd). Two columns keep the measure near 55 characters, which is what
-   lets the type be large enough to read comfortably and still fit one page. */
+   lets the type be large enough to read comfortably and still fit one page.
+
+   These rules target dl/dt/dd directly, so the Markdown needs no wrapper
+   div -- a plain pandoc definition list is enough. */
 
 @page {
   size: A4;
-  margin: 10mm 11mm 7mm 11mm;
+  margin: 9mm 10mm 6mm 10mm;
 }
 
-html { font-size: 9pt; }
+html { font-size: 10pt; }
 
 body {
   font-family: "Source Sans 3", "Source Sans Pro", "DejaVu Sans", sans-serif;
-  line-height: 1.38;
+  line-height: 1.5;
   color: #1a1a1a;
   margin: 0;
 }
@@ -22,7 +25,7 @@ body {
 h1.title, header#title-block-header { display: none; }
 
 h1 {
-  font-size: 14.6pt;
+  font-size: 15.2pt;
   line-height: 1.12;
   margin: 0 0 1.6mm 0;
   padding-bottom: 1.6mm;
@@ -37,86 +40,58 @@ h1 + p {
   color: #5a6b78;
 }
 
-h2 {
-  font-size: 9.4pt;
-  text-transform: uppercase;
-  letter-spacing: 0.045em;
-  color: #1f6fb4;
-  margin: 2.2mm 0 1.2mm 0;
-  padding-bottom: 0.6mm;
-  border-bottom: 0.5pt solid #c8d8e6;
-  break-after: avoid;
-}
-h2:first-of-type { margin-top: 0; }
-
 p { margin: 0 0 1.8mm 0; }
 
+/* the standfirst: the paragraph between the byline and the agenda */
+h1 + p + p { margin-bottom: 2.6mm; }
+
 /* ---- the agenda: question and answer ---------------------------------- */
-.agenda {
-  margin-bottom: 0;
-  column-fill: balance;
+dl {
+  margin: 0;
   column-count: 2;
-  column-gap: 7mm;
+  column-gap: 8mm;
   column-rule: 0.4pt solid #e3e9ee;
 }
 
-.agenda dl { margin: 0; }
-
 /* the question */
-.agenda dt {
+dt {
   font-weight: 700;
   color: #12405f;
-  margin: 0 0 0.9mm 0;
-  line-height: 1.34;
+  font-size: 1.03em;
+  margin: 0 0 1.2mm 0;
+  line-height: 1.32;
   break-after: avoid;          /* never strand a question at a column foot */
   break-inside: avoid;
 }
 
 /* the "Module N" label the document writes itself */
-.agenda dt strong:first-child {
+dt strong:first-child {
   color: #1f6fb4;
   letter-spacing: 0.015em;
 }
 
-/* the answer, set apart from the question by weight, colour and an indent */
-/* No break-inside:avoid here. A long answer that cannot be split forces the
-   column balancer to over-reserve height, which left ~23 mm of dead space
-   between the agenda and the next heading. dt's break-after:avoid already
-   keeps each question attached to the start of its answer. */
-.agenda dd {
-  margin: 0 0 2.2mm 6.6mm;
+/* the answer, set apart from the question by weight, colour and an indent.
+   break-inside:avoid makes the column balancer reserve height in whole
+   answers, which leaves some slack under the agenda -- affordable now that
+   the checklist is gone, and worth it to keep each module in one piece. */
+dd {
+  margin: 0 0 3.5mm 5mm;
   color: #3a3a3a;
   border-left: 1.2pt solid #dce5ec;
-  padding-left: 2.4mm;
-  orphans: 2;
-  widows: 2;
-}
-.agenda dd:last-child { margin-bottom: 0; }
-
-/* ---- the checklist ----------------------------------------------------- */
-.checklist {
-  column-count: 2;
-  column-gap: 7mm;
-  column-rule: 0.4pt solid #e3e9ee;
-}
-.checklist ol {
-  margin: 0;
-  padding-left: 5.6mm;
-}
-.checklist li {
-  margin-bottom: 0.7mm;
+  padding-left: 3.2mm;
+  /* keep each answer whole in one column, so a module is never split with
+     its tail sitting above the next module's heading */
   break-inside: avoid;
-  padding-left: 0.4mm;
 }
-.checklist li::marker { color: #1f6fb4; font-weight: 700; }
+dd:last-child { margin-bottom: 0; }
 
 /* ---- closing line ------------------------------------------------------ */
 body > p:last-of-type {
-  margin: 2.2mm 0 0 0;
-  padding: 1.6mm 2.5mm;
+  margin: 3mm 0 0 0;
+  padding: 1.5mm 2.5mm;
   background: #12405f;
   color: #ffffff;
   text-align: center;
-  font-size: 9.6pt;
+  font-size: 11.3pt;          /* 20% larger than the 9.4pt it was set at */
   border-radius: 1mm;
 }
