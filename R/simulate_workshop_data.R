@@ -87,6 +87,21 @@ workshop_params <- function(...) {
 ## Four-parameter-free Hill curve ----------------------------------------
 hill_viability <- function(conc, ic50, hill) 1 / (1 + (conc / ic50)^hill)
 
+## ...and its inverse. A single concentration and a known Hill slope turn one
+## viability reading into one apparent IC50 for cytotoxicity. This is what a
+## single-point screen actually reports, and it is the scale on which the
+## effect is additive - which is why every comparison from Module III on is
+## made here rather than in percentage points.
+##
+## Note what it needs: the Hill slope. The conversion is also steep at the
+## ends, so a lot sitting near 0% or 100% viability yields an IC50 that moves
+## a great deal for a small change in the reading.
+ic50_from_viability <- function(viability_pct, conc, hill,
+                                clamp = c(1, 99)) {
+  v <- pmin(pmax(viability_pct, clamp[1]), clamp[2]) / 100
+  conc * (v / (1 - v))^(1 / hill)
+}
+
 ## -----------------------------------------------------------------------
 simulate_workshop_data <- function(...) {
 
@@ -213,6 +228,9 @@ simulate_workshop_data <- function(...) {
         raw_rlu,
         plate_vehicle_rlu, plate_blank_rlu,
         viability_pct,
+        ## the same measurement expressed as an apparent cytotoxicity IC50
+        ic50_uM = round(ic50_from_viability(viability_pct, p$screen_conc,
+                                            p$hill_A), 2),
         bubble) %>%
       arrange(donor_id, compound, replicate)
   }
@@ -224,9 +242,9 @@ simulate_workshop_data <- function(...) {
   ## The threshold has to be expressed on the SAME scale, and in the SAME
   ## lots, as the estimate it will be compared with. Translating it at a
   ## hypothetical "reference lot" is not enough: the viability difference
-  ## produced by a given potency shift is largest for lots sitting in the
+  ## produced by a given IC50 shift is largest for lots sitting in the
   ## middle of the curve and smaller for lots at either end. So we ask the
-  ## question directly - if CPD-B were exactly `mcid_fold` times less potent
+  ## question directly - if CPD-B were exactly `mcid_fold`-fold less cytotoxic
   ## than CPD-A in each of THESE lots, how many percentage points of
   ## viability would separate them, on average?
   mcid_by_donor <- truth %>%
@@ -275,7 +293,7 @@ donor_means <- function(viab) {
 ##
 ##   n_donors  independent hepatocyte lots
 ##   n_wells   technical replicate wells per lot x compound
-##   fold      true potency separation; fold = 1 is the null world
+##   fold      true separation of the cytotoxicity IC50; fold = 1 is the null
 ##
 ## Returns one row: the paired estimate, its interval, its p-value, and the
 ## relevance threshold translated into these particular lots.
@@ -287,29 +305,55 @@ simulate_study <- function(n_donors = 8, n_wells = 3, fold = 5,
   ic50_A <- p$ic50_A * 10^rnorm(n_donors, 0, log10(p$donor_gsd))
   ic50_B <- ic50_A * fold * 10^rnorm(n_donors, 0, log10(p$compound_gsd))
 
+  ## read the plate, then put each well back onto the IC50 scale exactly as
+  ## the real analysis does, and average the wells of a lot in the log
   read_plate <- function(ic50) {
     v  <- 100 * hill_viability(p$screen_conc, ic50, p$hill_A)
     cv <- 0.05 + 0.12 * (1 - v / 100)          # noisier near the assay floor
-    noise <- matrix(rnorm(n_donors * n_wells), nrow = n_donors)
-    rowMeans(v * (1 + noise * cv))
+    obs <- v * (1 + matrix(rnorm(n_donors * n_wells), nrow = n_donors) * cv)
+    exp(rowMeans(log(ic50_from_viability(obs, p$screen_conc, p$hill_A))))
   }
 
-  d  <- read_plate(ic50_B) - read_plate(ic50_A)
+  ## the estimand: the within-lot fold shift, analysed in the log where it is
+  ## additive, then reported back as a fold
+  d  <- log10(read_plate(ic50_B)) - log10(read_plate(ic50_A))
   tt <- t.test(d)
 
-  ## the 3-fold rule, translated into the lots this study happened to draw
-  mcid <- mean(100 * hill_viability(p$screen_conc, ic50_A * p$mcid_fold, p$hill_A) -
-               100 * hill_viability(p$screen_conc, ic50_A, p$hill_A))
-
   tibble(n_donors = n_donors, n_wells = n_wells, fold = fold,
-         estimate = mean(d), lwr = tt$conf.int[1], upr = tt$conf.int[2],
-         p_value = tt$p.value, mcid_pp = mcid,
+         estimate = 10^mean(d),
+         lwr = 10^tt$conf.int[1], upr = 10^tt$conf.int[2],
+         p_value = tt$p.value,
+         threshold = p$mcid_fold,
          significant = tt$p.value < 0.05,
-         calls_relevant = tt$conf.int[1] > mcid,
-         calls_irrelevant = tt$conf.int[2] < mcid)
+         calls_relevant   = 10^tt$conf.int[1] > p$mcid_fold,
+         calls_irrelevant = 10^tt$conf.int[2] < p$mcid_fold)
 }
 
 ## Many studies at once ---------------------------------------------------
 replicate_studies <- function(n_sim = 1000, ...) {
   map_dfr(seq_len(n_sim), function(i) simulate_study(...) %>% mutate(sim = i))
+}
+
+## Lot-level summary on both scales --------------------------------------
+## Viability is what the instrument reports; the cytotoxicity IC50 is what we
+## decide on. Both are carried so that no module has to choose for the reader.
+lot_summary <- function(viab) {
+  viab %>%
+    group_by(donor_id, donor_sex, donor_age, compound, weekday) %>%
+    summarise(n_wells   = n(),
+              viability = mean(viability_pct),
+              sd_wells  = sd(viability_pct),
+              ## IC50 is a ratio scale, so its wells are averaged in the log
+              ic50_uM   = exp(mean(log(ic50_uM))),
+              .groups   = "drop")
+}
+
+## The quantity the study exists to estimate: the fold shift in cytotoxicity
+## IC50 between the two compounds, within each lot.
+lot_fold <- function(viab) {
+  lot_summary(viab) %>%
+    select(donor_id, compound, ic50_uM) %>%
+    pivot_wider(names_from = compound, values_from = ic50_uM) %>%
+    mutate(fold = `CPD-B` / `CPD-A`,
+           log10_fold = log10(fold))
 }

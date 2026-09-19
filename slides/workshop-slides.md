@@ -1,7 +1,7 @@
 ---
-title: "Statistical thinking for experimental scientists"
-subtitle: "Ten questions to ask before you trust an analysis"
-author: "Jitao David Zhang"
+title: "Statistical thinking: a workshop for experimental scientists"
+subtitle: "Nine questions to ask before you trust an analysis"
+author: "Jitao David Zhang and Christian Weinmann"
 date: "September 2026"
 ---
 
@@ -16,14 +16,11 @@ By the end of today you should be able to say:
 Not: which test to memorise.
 
 ::: notes
-3 min. Set expectations: this is not a statistics course, it is a course about
-asking better questions about experiments. Nobody will be asked to derive
-anything.
+3 min. This is not a statistics course. It is a course about asking better
+questions about experiments.
 :::
 
 ## The recurring loop
-
-Every module follows the same five steps:
 
 **Question → Design → Data → Analysis and uncertainty → Decision**
 
@@ -31,28 +28,19 @@ Every module follows the same five steps:
 - statistics enters at step four
 - by then, most of the answer is already fixed
 
-::: notes
-Emphasise: the last three modules cannot repair mistakes made in the first two.
-:::
-
 ## One dataset, all day
 
-CellTiter-Glo viability in primary human hepatocytes. Two compounds from one
-project.
+CellTiter-Glo viability in primary human hepatocytes. Synthetic, so the true
+answer is known and every claim today can be checked.
 
 | | |
 |---|---|
-| Independent units | 8 hepatocyte lots (donors) |
+| Independent units | 8 hepatocyte lots (HH1–HH8) |
 | Conditions | CPD-A and CPD-B, both in every lot |
 | Technical replicates | 3 wells per lot and compound |
 | Readout | 22.4 µM, one point on the curve |
 | Run days | Friday and Monday |
 | **Total** | **48 measurements** |
-
-## The data are synthetic
-
-So the true answer is known, and every claim made today can be checked against
-it.
 
 ## Three things are hidden in it
 
@@ -63,19 +51,19 @@ it.
 Each surfaces in the module where it matters.
 
 ::: notes
-Do not reveal which lot or which well yet. Modules 4 and 7 depend on the
-surprise.
+Do not reveal which lot or which well yet. Modules IV and VI depend on it.
 :::
 
-# Module 1 — What question are we asking?
+# Module I — What are we asking, and what difference matters?
 
-## "Run the assay and tell me if it's significant"
+## The question
 
-That instruction cannot be carried out.
+> **What questions are we asking, and what is the minimal difference that we
+> care about?**
 
-- Measurements **of what**?
-- From **whom or what**?
-- Under **which conditions**?
+"Run the assay and tell me if it's significant" cannot be carried out.
+
+- Measurements **of what**? From **whom**? Under **which conditions**?
 - What **population** do we want to speak about?
 - What **decision** does this inform?
 
@@ -85,432 +73,243 @@ That instruction cannot be carried out.
 > lots** because I need to decide **whether CPD-B is materially less cytotoxic
 > than CPD-A**.
 
-The team fixes the threshold **before** seeing data:
-a **3-fold shift in potency** is what they would act on.
+The team fixes the threshold **before** seeing data: a **3-fold shift in the
+cytotoxicity IC₅₀** is what they would act on.
 
-## A threshold has to be carried onto the scale you measure
+Not *potency* — that is defined against a target. This assay only says how much
+compound it takes to kill cells.
+
+## Two scales: what we measure, what we decide on
 
 ![](output/figures/m1-threshold-1.png){height=4.4in}
 
-## The threshold: 24.3 pp, not 37.8 pp
+## Why we decide on the IC₅₀ scale
 
-- the assay reports viability, not potency — so the rule must be translated
-- the same potency shift shows a **different** viability gap depending on
-  where a lot sits on the curve
-- translating at one "typical" lot gives **37.8 pp**
-- translating in the **actual lots** gives **24.3 pp**
+- **what the instrument reports** — viability at one concentration, in
+  percentage points
+- **what the project decides on** — the concentration that kills half the
+  cells, compared as a **fold shift**
 
-The naive number would have made the study look like a failure.
+On the IC₅₀ scale the rule is **one number, 3-fold, the same for every lot**.
+In percentage points it is not one number at all — 15 to 39 pp across these
+eight lots, because the same shift shows a smaller gap near either end of the
+curve.
 
-## Your turn — 5 minutes
+We report both. From Module III on, the **comparison** is made on the IC₅₀
+scale, where the effect is additive.
 
-Complete the sentence for one of your own experiments:
+## Conclusion
 
-> I want to estimate/compare ______ in ______ because I need to decide ______.
+**We follow the order question, threshold, experiment, statistics — not the
+reverse.** And the threshold belongs on the scale the decision is made on.
 
-Then name the number that would make you act.
+Statistics cannot rescue an experiment whose question was never defined.
 
-## Key message
+> **Over to you.** Think of one of your own experiments or assays where this
+> applies. What questions does it raise? Would it change what you do?
 
-**Statistics cannot rescue an experiment whose question was never defined.**
+# Module II — What types of variation are there?
 
-The threshold is a scientific decision, fixed before the data, and expressed
-on the scale you will actually measure.
+## The question
 
-# Module 2 — What does one number tell us?
+> **What types of variation are there?**
 
-## Six numbers from the first lot
+Six numbers come off the plate reader for the first lot. What can be said?
+
+## Show the points, not a bar
 
 ![](output/figures/m2-dots-1.png){height=4.4in}
-
-## The bar chart is not wrong — it is uninformative
-
-It is compatible with almost any underlying data.
-
-Show the points. Always.
 
 ## Nothing changes but the answer
 
 ![](output/figures/m2-mean-moves-1.png){height=4.4in}
 
 ::: notes
-The truth is a fixed dashed line. Every repeat lands somewhere else. This is
-sampling uncertainty, introduced without a single equation.
+The truth is a fixed line. Every repeat lands somewhere else. Sampling
+uncertainty, introduced without an equation.
 :::
 
 ## Variation is not one thing
 
 ![](output/figures/m2-taxonomy-1.png){height=4.4in}
 
-## Four kinds, four responses
-
-| Kind | Example | What to do |
-|---|---|---|
-| **Wanted** | the compound effect | measure it |
-| **Unavoidable** | well-to-well pipetting | replicate, then average |
-| **Controllable** | run day, plate, operator | block it, or standardise it |
-| **Confounding** | run day that tracks compound | redesign — cannot be fixed later |
-
 ## Bias and variance
 
 ![](output/figures/m2-target-1.png){height=4.4in}
 
-## Two scenarios to argue about
+## Conclusion
 
-**A.** Every control is pipetted with pipette A, every treated sample with
-pipette B.
+**Usually we care about biological and compound-induced variation. Technical
+variation sometimes needs to be minimized. We need a balance between variation
+and bias.**
 
-**B.** Every replicate uses a different consumable batch, "to be
-representative".
+Variation is not a sign of a bad experiment.
 
-> Which makes it hard to know whether the treatment caused the difference?
-> Which makes a real effect harder to detect?
+> **Over to you.** Name one source of variability in your own assay. Is it
+> wanted, unavoidable, controllable, or confounding?
 
-## Your turn — 5 minutes
+# Module III — Biological and technical replicates
 
-Name one source of variability in your own assay.
+## The question
 
-Classify it: **wanted**, **unavoidable**, **controllable**, or
-**confounding**.
+> **What are biological and technical replicates, and what are their uses?**
 
-## Key message
-
-**Variation is not a sign of a bad experiment.**
-
-Some is the signal, some is the price of measuring, some is a design choice
-you still have, and some is a design mistake you no longer have.
-
-# Module 3 — What is *n*?
-
-## 48 numbers. What is *n*?
-
-48? 16? 8? Something else?
+48 numbers are on the table. What is *n*? 48? 16? 8?
 
 - **Technical replicate** — tells you about the *measurement*
 - **Biological replicate** — tells you about the *population*
 
 Three wells from one lot are not three lots.
 
-Here the independent unit is the **hepatocyte lot**: *n* = 8.
+## Counting wells manufactures confidence
 
-## The same comparison, twice
+![](output/figures/m3-pseudo-fig-1.png){height=4.2in}
 
-| Analysed as | Estimate | 95% CI | *p* |
-|---|---|---|---|
-| 48 wells, treated as independent | 38.2 pp | 25.0 – 51.4 | 5×10⁻⁷ |
-| 8 lots, treated as independent | 38.2 pp | 13.7 – 62.7 | 0.005 |
+## Same estimate, and the wrong answer
 
-## Same estimate. Very different confidence.
+Identical estimate, *p* about **15,000× smaller**, no new information about
+lots — and the verdict is wrong.
 
-*p* about **9,000× smaller**. Interval about **half as wide**.
-
-## The extra confidence is manufactured
-
-Counting wells adds no information about lots.
-
-**But note:** the pseudoreplicated interval here lands close to the right
-answer — by luck, not vindication. Two errors partly cancelled.
-
-An analysis that is wrong for two reasons can still land in a plausible place.
-What it cannot do is **tell you** that it has.
+| Analyzed as | Estimate | 95% CI | *p* | Verdict |
+|---|---|---|---|---|
+| 48 wells, as if independent | 4.82× | 2.86 – 8.13 | 3×10⁻⁷ | **inconclusive** |
+| 8 lots, correctly | 4.82× | 1.83 – 12.7 | 0.004 | inconclusive |
+| *(paired, Module V)* | *4.82×* | *3.11 – 7.47* | *6×10⁻⁵* | ***act*** |
 
 ::: notes
-This is the most important slide in the module. Resist the temptation to make
-pseudoreplication look obviously wrong — it usually does not.
+The smallest p-value on the page, and the wrong verdict. Two errors on top of
+each other: counting wells narrows the interval, ignoring the pairing widens
+it. The interval is not entitled to whatever width it happens to have.
 :::
 
 ## Twelve measurements, two ways to spend them
 
-![](output/figures/m3-designs-1.png){height=4.4in}
+![](output/figures/m3-designs-1.png){height=4.2in}
 
-## Neither design is better
+## Conclusion
 
-- **12 lots × 1 well** — estimates lot-to-lot variation well, technical
-  variation not at all
-- **3 lots × 4 wells** — the opposite, and estimates lot spread from three
-  points
+**Which of them counts as the independent unit depends on the question, and
+that choice sets the level at which the data must be analyzed.**
 
-They answer different questions. If the question is about hepatocyte lots in
-general, spend the measurements on lots.
+The smallest *p*-value on the page came with the wrong verdict.
 
-## Your turn — 5 minutes
+> **Over to you.** In your last experiment, what was the independent unit? Was
+> the *n* you reported the number of units, or of measurements?
 
-In your last experiment: what was the independent unit?
+# Module IV — Randomization and blocking
 
-Was the number you reported as *n* the number of **units**, or the number of
-**measurements**?
+## The question
 
-## Key message
+> **What are randomization and blocking, and why are they important for
+> experimental design?**
 
-***n* is the number of independent units — and the analysis must be done at
-that level.**
+Sixteen plates cannot run in one sitting. The scheduler runs all CPD-A on
+Friday, all CPD-B on Monday.
 
-# Module 4 — Blocking and randomisation
-
-## The scheduler did the natural thing
-
-Sixteen plates cannot run in one sitting. So: all CPD-A on Friday, all CPD-B
-on Monday.
-
-Something real happened on Friday: the vehicle wells read about **20% higher**.
-
-Viability is expressed relative to each plate's own vehicle — so a shift in
-the *reference* propagates into every value on that plate.
+On Friday the vehicle wells read about **20% higher** — and viability is
+expressed relative to each plate's own vehicle.
 
 ## The day effect is visible without any compound data
 
-![](output/figures/m4-vehicle-1.png){height=4.4in}
+![](output/figures/m4-vehicle-1.png){height=4.2in}
 
 ## The only difference is which day each plate ran
 
-![](output/figures/m4-designs-1.png){height=4.4in}
+![](output/figures/m4-designs-1.png){height=4.2in}
 
-## On the real data, confounding does not announce itself
+## Two compounds that are identical by construction
 
-| Schedule | Mean difference | Simulated truth |
-|---|---|---|
-| Blocked | 38.2 pp | 41.8 pp |
-| Confounded | 40.6 pp | 41.8 pp |
-
-## That is exactly the problem
-
-Both land within a few points of the truth. The confounded schedule is not
-obviously worse.
-
-**Confounding does not announce itself.**
-
-## So run the experiment that settles it
-
-Make the two compounds **exactly identical**. Change nothing else.
-
-| Schedule | Estimate | 95% CI | *p* |
-|---|---|---|---|
-| Blocked | 1.9 pp | −2.0 – 5.7 | 0.29 |
-| **Confounded** | **4.5 pp** | **0.3 – 8.6** | **0.039** |
+![](output/figures/m4-null-fig-1.png){height=4.0in}
 
 ::: notes
-Let this sit for a moment before clicking on.
+Let this sit. A statistically significant 1.25-fold shift (p = 0.012) between
+two compounds that are the same compound. Perfectly reproducible, and entirely an
+artifact of the schedule.
 :::
 
-## A significant difference between two identical compounds
+## Block what you can, randomize the rest
 
-Significant. Perfectly reproducible. And entirely an artefact of which day the
-plates ran.
-
-## Nothing in the data can reveal it
-
-Day and compound are the **same column**. Every CPD-A plate is a Friday plate.
-
-No test, no model and no care in the analysis can separate two factors that
-never varied independently.
-
-Blocking does not remove the day effect — it removes the **confounding**.
-
-## The three levers
+Day and compound were the **same column**. No analysis can unmix that.
 
 | Lever | Use it for | Failure mode |
 |---|---|---|
 | **Block** | day, plate, operator | blocking on something that tracks treatment does nothing |
-| **Randomise** | anything you cannot block | small experiments still randomise into imbalance |
-| **Standardise** | same pipette, one consumable lot | standardising *per arm* manufactures bias |
+| **Randomize** | anything you cannot block | small experiments still randomize into imbalance |
+| **Standardize** | same pipette, one consumable lot | standardizing *per arm* manufactures bias |
 
-## The same word, two opposite outcomes
+## Conclusion
 
-Same pipette **throughout**: reduces variance. Good.
+**Test both A and B within each batch, rather than A in one batch and B in the
+other. Block what you can, and randomize the rest.**
 
-Pipette A for arm A, pipette B for arm B: also "standardising". Creates a
-**confounder**.
+> **Over to you.** Which factors in your own assay could you block? Which would
+> you have to randomize?
 
-## Your turn — design poker, 5 minutes
+# Module V — How do we compare two groups?
 
-Teams of 2–3. Four lots, two compounds, two protocols. Lay the experiments out
-in two rows: Friday and Monday.
+## The question
 
-- Which factors did you **block**?
-- Which did you **randomise**?
-- Is any factor now perfectly **aliased**? Redeal.
+> **How do we compare two groups?**
 
-## Key message
-
-**Good design decides which variation the statistics can separate later.**
-
-After the experiment, no analysis can unmix a confounder.
-
-# Module 5 — Paired or unpaired?
+We are interested in the population; we only have samples and their
+measurements.
 
 ## The way this comparison is usually drawn
 
-![](output/figures/m5-clouds-1.png){height=4.4in}
-
-## What did the first graph hide?
-
-Every lot was tested with **both** compounds.
-
-The vertical scatter is mostly **lots differing from each other** — not
-compounds being similar.
-
-Draw the lines, and the lot differences stop competing with the signal.
+![](output/figures/m5-clouds-1.png){height=4.2in}
 
 ## Four tests, one dataset
 
-| Test | Estimate | 95% CI | *p* | Clears 24.3 pp? |
-|---|---|---|---|---|
-| Student, unpaired | 38.2 | 13.7 – 62.7 | 0.005 | **inconclusive** |
-| Welch, unpaired | 38.2 | 13.7 – 62.7 | 0.005 | **inconclusive** |
-| **Paired t** | **38.2** | **26.4 – 50.0** | **0.0001** | **yes** |
-| Wilcoxon signed rank | 36.4 | 27.0 – 48.8 | 0.008 | yes |
+![](output/figures/m5-tests-fig-1.png){height=4.2in}
+
+::: notes
+Read the colours, not the p-values. Every test finds a difference. They do not
+agree on whether it clears the threshold we committed to in Module I.
+:::
 
 ## Ignoring the pairing cost the decision
 
-Every test agrees there is *a* difference.
+- pairing is a property of the **design**, fixed before the data exist
+- **Welch** as the unpaired default: protection when you need it, nothing when
+  you do not
+- **Wilcoxon** on 8 pairs cannot return *p* below 1/128 ≈ 0.008, whatever the
+  data look like
+- unpaired 1.8 – 12.7-fold, **inconclusive**; paired 3.1 – 7.5-fold, **act**
 
-They do **not** agree on whether it clears the threshold the team committed to
-in Module 1.
+**Beyond two groups:** ANOVA for more than two groups, linear regression to
+adjust for covariates — the same questions still have to be answered first.
 
-> Pairing is a property of the **design**, fixed before the data exist.
-> Never something you discover by trying both.
+## Conclusion
 
-## Two footnotes worth the time
+**Commonly used tools include the unpaired t-test, the paired t-test, and
+non-parametric tests.** The test follows the design.
 
-**Welch as the default.** Here the group SDs are 24.0 and 21.6 — Student and
-Welch agree to the first decimal. You get protection when you need it and pay
-nothing when you do not.
+> **Over to you.** Find an experiment of your own where the samples are paired.
+> Was it analyzed that way?
 
-**Non-parametric is not free.** With *n* = 8, the smallest *p* Wilcoxon can
-ever return is 1/128 ≈ 0.008. It cannot produce strong evidence here, whatever
-the data look like.
+# Module VI — How do we detect and handle outliers?
 
-## Visualisation hierarchy
+## The question
 
-1. the raw observations
-2. the structure — pairing, blocks, batches
-3. the estimated effect
-4. its uncertainty
+> **How do we detect and handle outliers?**
 
-Bars, SEM whiskers and asterisks come after all four. If at all.
+Two values look wrong. They are not the same kind of thing.
 
-## Wide and long — the same 16 numbers
+## All 48 wells
 
-- **long** — one row per measurement, a column per factor; what R, Python and
-  `ggplot2` expect
-- **wide** — one factor spread across columns; what Excel and Prism are built
-  for, and the right shape for a paired test
+![](output/figures/m6-candidates-1.png){height=4.2in}
 
-Both are exported. Keep lot, day and plate as real **columns**, not sheet
-names.
+## One is an artifact, one is biology
 
-## Your turn — 5 minutes
+**Candidate 1 — a single well.** The notebook says *"air bubble observed;
+pipette felt strange"*. Documented, technical, recorded before the result was
+seen. The other two wells of that condition agree.
 
-Find an experiment in your own work where the samples are **paired**.
+**Candidate 2 — a whole lot.** More sensitive to **both** compounds, IC₅₀
+about 3-fold lower, nothing abnormal in the QC record.
 
-Was it analysed that way?
-
-## Key message
-
-**The statistical test follows the experimental design.**
-
-Draw the structure before you test it, and the right test is usually obvious.
-
-# Module 6 — P-values and confidence intervals
-
-## Assume the compounds are identical
-
-Then run the whole study 2,000 times in that imaginary world.
-
-![](output/figures/m6-null-1.png){height=4.4in}
-
-## Panel A *is* the p-value
-
-The red area is the fraction of studies in a no-difference world that would
-produce a difference at least as extreme as ours.
-
-**Panel B is worth a minute.** When there is genuinely nothing to find,
-p-values are **uniform** — every value as likely as any other, about 5% below
-0.05.
-
-That is what a 5% false-positive rate means.
-
-## What a p-value is **not**
-
-- the probability that the compounds are identical
-- the probability that the result happened by chance
-- the probability that the experiment will replicate
-- anything at all about the **size** of the effect
-
-## "95% confidence" is a statement about the procedure
-
-![](output/figures/m6-coverage-1.png){height=4.4in}
-
-## Which result is more informative?
-
-**A.** *p* = 0.03
-
-**B.** estimated difference = 38 pp, plausible range 26 to 50 pp
-
-Only **B** can be compared with a threshold. Only B supports a decision.
-
-## Read the interval against the threshold, not against zero
-
-![](output/figures/m6-three-1.png){height=4.4in}
-
-## Three conclusions, not two
-
-1. **Evidence for a relevant difference** — interval above the threshold
-2. **Evidence against** — interval entirely below it
-3. **Inconclusive** — interval spans it
-
-The third is a result, and it is worth reporting.
-
-## Our study
-
-**38.2 pp, 95% CI 26.4 – 50.0, threshold 24.3 pp**
-
-→ **relevant difference — act**
-
-## Your turn — 5 minutes
-
-Which of the three results would change what you do next, and why?
-
-Then: the last *p*-value you showed in a presentation — could you still state
-the effect size and its interval?
-
-## Key message
-
-**The p-value answers a narrow question about a world we do not believe in.**
-
-The effect size and its interval answer the question we asked. Report both,
-decide on the second.
-
-# Module 7 — Surprising observations
-
-## Two values look wrong. They are not the same kind of thing.
-
-![](output/figures/m7-candidates-1.png){height=4.4in}
-
-## Candidate 1 — a single well
-
-Laboratory notebook for that plate:
-
-> *Air bubble observed in well B; pipette felt strange.*
-
-- independent, documented, technical
-- recorded **before** anyone saw the result
-- the other two wells of that condition agree with each other
-
-A measurement failure. Excluding it is a **QC** decision.
-
-## Candidate 2 — a whole lot
-
-Grubbs' test flags it.
-
-But the lot is more sensitive to **both** compounds, its IC₅₀ genuinely about
-3-fold lower, and nothing in the QC record marks that plate.
-
-> Grubbs asks whether a value is **improbable**. Never whether it is
-> **wrong**.
-
-A lot that is genuinely more sensitive is exactly what a safety margin should
-be built on.
+> Grubbs' test flags the second one. Grubbs asks whether a value is
+> **improbable** — never whether it is **wrong**.
 
 ## A workflow, not a test
 
@@ -523,131 +322,155 @@ be built on.
 
 ## Step 5, done
 
-| Scenario | Estimate | 95% CI | Clears threshold? |
-|---|---|---|---|
-| Keep everything | 38.2 | 26.4 – 50.0 | yes |
-| Exclude the bubble well | 39.8 | 28.7 – 50.8 | yes |
-| Exclude the sensitive lot | 38.6 | 24.6 – 52.6 | yes |
-| Exclude both | 40.4 | 27.3 – 53.4 | yes |
+![](output/figures/m6-sensitivity-fig-1.png){height=4.0in}
 
-## Report both ways
+::: notes
+The documented exclusion (air-bubble well) changes nothing. The unjustified
+one (the sensitive lot) widens the interval past the 3-fold line and the
+verdict falls back to inconclusive.
+:::
 
-Running the analysis with and without is cheap — three lines of code.
+## Conclusion
 
-A result that survives both is worth far more than one that requires a
-particular exclusion.
+**Use common sense, experience, and prior knowledge to judge. State the reasons
+explicitly, and in case of doubt run the analysis with and without.**
 
-## Your turn — 5 minutes
+Implausible *given the controls* is a QC exclusion. Inconvenient *given the
+hypothesis* is data manipulation.
 
-Think of a value you or a colleague once excluded.
+> **Over to you.** Think of a value you or a colleague once excluded. Which
+> step justified it? Was the criterion written down beforehand?
 
-- Which of the six steps justified it?
-- Was the criterion written down **before** the result was seen?
-- Would the conclusion have survived if it had stayed in?
+# Module VII — P-values, effect sizes and confidence intervals
 
-## Key message
+## The question
 
-**Is the value implausible given the controls, or merely inconvenient given
-the hypothesis?**
+> **What do we mean by p-values, effect sizes, and confidence intervals?**
 
-The first is a QC exclusion. The second is data manipulation.
+Assume the two compounds are **identical**. Run the whole study 2,000 times in
+that imaginary world.
 
-# Module 8 — Power and the decision
+## What "no difference" looks like
 
-## Same effect, same assay, same noise. Only *n* changes.
+![](output/figures/m7-null-1.png){height=4.2in}
 
-![](output/figures/m8-power-fig-1.png){height=4.4in}
+## What a p-value is **not**
+
+The left panel *is* the p-value: the fraction of studies in a no-difference
+world that would produce a difference at least as extreme as ours.
+
+It is **not**:
+
+- the probability that the compounds are identical
+- the probability that the result happened by chance
+- the probability that the experiment will replicate
+- anything at all about the **size** of the effect
+
+## "95% confidence" is a statement about the procedure
+
+![](output/figures/m7-coverage-1.png){height=4.2in}
+
+## Read the interval against the threshold, not against zero
+
+![](output/figures/m7-three-1.png){height=4.0in}
+
+::: notes
+B is the interesting one: precise, unambiguous, significant, and far too small
+to matter.
+:::
+
+## Conclusion
+
+**The p-value tells you whether there might be a difference, not how large it
+is — effect size matters. A confidence interval is an educated guess at the
+range of the effect size.**
+
+Three conclusions, not two: **relevant · not relevant · inconclusive**.
+
+> **Over to you.** The last p-value you showed in a talk — could you still state
+> the effect size and its interval?
+
+# Module VIII — What is power, and how does it affect our decision?
+
+## The question
+
+> **What is power, and how does it affect the quality of our decision?**
+
+The same true 5-fold difference, the same assay, the same noise. Only the
+number of lots changes.
 
 ## Two kinds of power
 
-| Lots | *p* < 0.05 | CI clears the threshold |
+![](output/figures/m8-power-fig-1.png){height=4.2in}
+
+## Getting a small *p* is easier than answering the question
+
+Power is not a property of an assay. It is a property of an assay **plus a
+hypothesised effect size**.
+
+| Lots | *p* < 0.05 | CI clears 3-fold |
 |---|---|---|
-| 3 | 83% | **27%** |
-| 6 | 100% | **64%** |
-| 12 | 100% | 98% |
-| 24 | 100% | 100% |
-
-## Getting a small *p*-value is far easier than answering the question
-
-With 3 lots you would reach significance in 83% of studies — but could only
-**act** on 27% of them.
-
-## Power is not a property of an assay
-
-It is a property of an assay **plus a hypothesised effect size**.
-
-> "How many samples do I need?" has no answer until
-> "what difference would matter?" has one.
+| 2 | 54% | **19%** |
+| 3 | 99% | **52%** |
+| 4 | 100% | 81% |
+| 6 | 100% | 97% |
+| 12 | 100% | 100% |
 
 ## Underpowered studies do not just fail — they mislead
 
-![](output/figures/m8-exaggeration-fig-1.png){height=4.4in}
-
-## The bias always points the same way
-
-At 18% power, the studies that reach significance overstate the effect by about
-**29%**. By 99% power the distortion is gone.
-
-An underpowered literature is not merely noisy. It is **biased**.
+![](output/figures/m8-exaggeration-fig-1.png){height=4.0in}
 
 ## Where to spend 24 wells
 
-![](output/figures/m8-allocation-1.png){height=4.4in}
+![](output/figures/m8-allocation-1.png){height=4.0in}
 
-## Technical replicates cannot substitute for lots
+::: notes
+3 lots x 8 wells: 68% decisive. 8 lots x 3 wells: 99%. The uncertainty that
+matters is lot-to-lot, and no number of wells fixes it.
+:::
 
-| Allocation | *p* < 0.05 | Clears the threshold | Median CI width |
-|---|---|---|---|
-| 3 lots × 8 wells | 84% | **28%** | 44.3 pp |
-| **8 lots × 3 wells** | 100% | **84%** | **18.3 pp** |
+## Conclusion
 
-## Adding wells to three lots never fixes it
+**Once we define a threshold, the sample size determines the power: the
+probability of detecting a difference of at least that size when one exists.**
 
-The uncertainty that matters is **lot-to-lot**. No number of technical
-replicates reduces it.
+Too few samples may not allow us to detect subtle differences.
 
-## Your turn — 5 minutes
+> **Over to you.** Would you act on these data? What would you run next, and how
+> many **lots** would it need?
 
-Would you act on these data?
-
-What would you run next, and how many **lots** would it need?
-
-## Key message
-
-**Power is the question "what would this experiment be able to tell me?" —
-asked while there is still time to change the answer.**
-
-# Module 9 — What we have learned
+# What we have learned
 
 ## The same 48 numbers, four ways
 
 | Analysis | Estimate | 95% CI | Conclusion | Earned? |
 |---|---|---|---|---|
-| Count wells, ignore lots | 38.2 | 25.0 – 51.4 | relevant | **no** — interval too narrow to believe |
-| Confounded schedule | 40.6 | — | no interval possible | **no** — contains the day effect |
-| Lots, pairing ignored | 38.2 | 13.7 – 62.7 | inconclusive | yes |
-| **Lots, paired, blocked** | **38.2** | **26.4 – 50.0** | **relevant** | **yes** |
+| Count wells, ignore lots | 4.82× | 2.86 – 8.13 | inconclusive | **no** — not entitled to its width |
+| Confounded schedule | 5.86× | — | no interval possible | **no** — contains the day effect |
+| Lots, pairing ignored | 4.82× | 1.83 – 12.7 | inconclusive | yes |
+| **Lots, paired, blocked** | **4.82×** | **3.11 – 7.47** | **act** | **yes** |
 
-## Only the last row is both right and entitled to be right
+## Only the last row is entitled to be right
 
-Row 1 is the uncomfortable one: the shortcut reaches the same conclusion, with
-a far smaller *p*-value. It is right **by accident**.
+Row 1 produced the **smallest *p*-value on the page** — 3×10⁻⁷ — and still
+reached the wrong verdict, because the same analysis also ignored the pairing.
 
-Had the lots been a little more variable, the same shortcut would have
-produced the same unwarranted confidence behind a **wrong** answer — and
-nothing in the output would have looked different.
+A very small *p*-value is not evidence that the analysis was the right one.
+Here it is evidence of the opposite.
+
+Row 2 has no interval at all. That is not a missing number; it is the design
+telling you the question cannot be answered from these data.
 
 ::: notes
-This is the closing argument of the whole workshop. The arithmetic always
-runs. It never tells you which row you are in.
+The closing argument. The arithmetic always runs. It never tells you which row
+you are in.
 :::
 
 ## Three things worth remembering
 
-- Good design **minimises unnecessary variation** while maximising the chance
+- Good design **minimizes unnecessary variation** while maximizing the chance
   of detecting what you care about
-- Design and analysis **reduce uncertainty; they never remove it** — an honest
-  interval beats a confident sentence
+- Design and analysis **reduce uncertainty; they never remove it**
 - The decision is **scientific**: effect size, threshold and context live
   outside statistics
 
@@ -657,7 +480,13 @@ runs. It never tells you which row you are in.
 >
 > you first have to answer *"how were the data generated?"*
 
-# Module 10 — Where to go from here
+# Module IX — How can I learn more and get help?
+
+## The question
+
+> **How can I learn more and get help if I am stuck?**
+
+Start with the prompt you would actually type.
 
 ## The usual prompt
 
@@ -669,21 +498,20 @@ confident.
 It cannot know whether the columns are paired, whether rows are wells or lots,
 whether the groups ran on different days, or what difference you would act on.
 
-So it guesses — usually an unpaired t-test on every row. On this dataset, the
-analysis that gets the wrong answer twice over.
+On this dataset, that is the analysis that gets the wrong answer twice over.
 
 ## The same request, with the design in it
 
 > *"These measurements come from eight independent human hepatocyte lots. Each
 > lot was tested with both compounds, three technical wells per lot and
 > compound. The independent unit is the lot, not the well. Plates ran over two
-> days; day is balanced across compounds. We decided in advance that a
-> difference below 24 percentage points would not change our decision.*
+> days; day is balanced across compounds. A shift in the cytotoxicity IC₅₀
+> below 3-fold would not change our decision.*
 >
-> *Help me visualise the data so the pairing is visible, estimate the
-> difference with its uncertainty, and compare that interval with our
-> threshold. Before recommending a test, tell me what you think the
-> independent unit is and whether the comparison is paired."*
+> *Help me visualize the data so the pairing is visible, estimate the difference
+> with its uncertainty, and compare that interval with our threshold. Before
+> you recommend a test, tell me what you think the independent unit is and
+> whether the comparison is paired."*
 
 ## Every fact in that prompt is a design fact
 
@@ -696,19 +524,6 @@ you catch a wrong assumption while it is still cheap.
 The same applies to a colleague, a statistician, or your own notebook six
 months from now.
 
-## The final checklist
-
-1. What is the question, and what difference would matter?
-2. What population do I want to generalise to?
-3. What is my independent experimental unit?
-4. Where can bias enter?
-5. Which variation do I block, randomise, or standardise?
-6. Plot so the experimental structure is visible
-7. Estimate the effect **and** its uncertainty
-8. Use a test that matches the design
-9. Investigate surprising observations instead of deleting them
-10. Decide on effect size, uncertainty and context — not the *p*-value alone
-
 ## Reading
 
 - Krzywinski & Altman, *Points of Significance*, Nature Methods (2013–2015)
@@ -716,18 +531,14 @@ months from now.
 - Amrhein, Greenland & McShane, *Retire statistical significance*, Nature (2019)
 - The ARRIVE and *Nature* reporting checklists
 
-## And otherwise
+## Conclusion
 
-**Come and talk to me.**
+**We will recommend resources, share useful prompts for AI, and offer to
+consult with you.**
 
 Most statistical problems that reach a statistician are design problems that
-arrived too late.
+arrived too late. The conversation is much shorter, and much happier,
+**before** the experiment.
 
-The conversation is much shorter, and much happier, **before** the experiment.
-
-## Take the data with you
-
-Every module exported the data it used, as plain CSV, in `output/workshop/`.
-
-Open them in Excel, Prism, R or Python — or paste one into an LLM together
-with the design description from two slides ago.
+> Every module's data is in `output/workshop/` as plain CSV — open it in Excel,
+> Prism, R or Python.

@@ -54,7 +54,7 @@ and Monday**. The simulated truth is that the *vehicle wells* read
 `r scales::percent(params$friday_vehicle_gain)` higher on Friday, while the
 compound-treated wells are unchanged. Because viability is expressed relative
 to the plate's own vehicle, a day effect that lives only in the reference
-propagates straight into every normalised value on that plate.
+propagates straight into every normalized value on that plate.
 
 Two designs are simulated on the same plate layout, differing **only** in how
 run day is allocated:
@@ -332,7 +332,7 @@ wells <- schedule %>%
     raw_rlu = round(pmax(raw_rlu, 0)))
 ```
 
-## Normalisation
+## Normalization
 
 Per plate: background from the no-cell blanks, 100% from the **interior**
 vehicle wells. This is the correct procedure — and it is precisely what
@@ -378,7 +378,7 @@ p_vehicle <- ctg %>%
   tight_x(0.38) +
   scale_fill_manual(values = day_cols, guide = "none") +
   labs(title = "Vehicle wells by run day",
-       subtitle = "the reference the whole plate is normalised against",
+       subtitle = "the reference the whole plate is normalized against",
        x = NULL, y = expression("Raw signal (10"^6~"RLU)")) +
   theme_ctg
 
@@ -466,7 +466,7 @@ plate_qc %>% filter(!qc_pass) %>% select(design, plate_id, donor_id, compound,
 ```
 
 Note what the failure does *not* do. Because the whole plate is scaled down,
-normalising to that plate's own vehicle removes the gain almost completely —
+normalizing to that plate's own vehicle removes the gain almost completely —
 the fitted IC~50~ is not strongly biased, it is simply imprecise. QC catches it
 through **variance**, not through the mean. A partial failure (one column of
 tips blocked) would be the opposite case: it biases the curve shape while
@@ -560,7 +560,7 @@ gsd <- function(x) exp(sd(log(x), na.rm = TRUE))
 true_sep <- params$ic50_B / params$ic50_A
 ```
 
-## Recovered potency
+## Recovered cytotoxicity IC~50~
 
 ```{r recovery-table}
 recovery <- ic50_qc %>%
@@ -782,7 +782,7 @@ sep_scenarios
 ```
 
 Keeping the failed plate does not shift the point estimate much — the
-whole-plate gain cancels in the normalisation — but it inflates the spread,
+whole-plate gain cancels in the normalization — but it inflates the spread,
 because that plate's IC~50~ carries a standard error several times larger than
 the others. Dropping the plate is the right call, and it is the *QC rule*, not
 the IC~50~, that justifies it.
@@ -1080,7 +1080,7 @@ both is worth considerably more than one that requires a particular exclusion.
 # What the design simulation shows
 
 * **The bias is predictable in size.** A vehicle reference inflated by a factor
-  *g* scales every normalised viability on that plate by 1/*g*. For a 4PL with
+  *g* scales every normalized viability on that plate by 1/*g*. For a 4PL with
   Hill slope *h*, the absolute IC~50~ moves by a factor
   ((2/*g*) − 1)^1/h^ — about
   `r round(((2 / (1 + params$friday_vehicle_gain)) - 1)^(1 / params$hill_A), 3)`
