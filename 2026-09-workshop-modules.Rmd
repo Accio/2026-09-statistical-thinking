@@ -33,6 +33,7 @@ library(tidyverse)
 library(patchwork)
 library(ribiosUtils)   # ofactor, percentage
 library(ribiosPlot)    # openFileDevice, closeFileDevice
+library(DT)
 
 source("R/simulate_workshop_data.R")
 set.seed(params$seed)
@@ -307,13 +308,14 @@ p1a_prime <- ggplot(curve_df, aes(conc, viability, colour = series, linetype = s
   annotate("text", x = ic50_T, y = 50, hjust = -0.08, vjust = 0,
            label = "3-fold", size = GEOM_PT, colour = "grey25") +
   scale_x_log10(breaks=c(1, 10, 30, 100, 1000)) +
-  scale_colour_manual(values = cpd_cols) +
+  scale_colour_manual(values = c("CPD-A" = "#1f6fb4",
+                                 "3\u00d7 higher IC50" = "#7a3b8f")) +
   scale_linetype_manual(values = c("CPD-A"=1, "3\u00d7 higher IC50"=2)) +
   labs(title = "Q: is there a substantial shift in IC50?",
        x = "Concentration (µM)", y = "ATP (% of vehicle)") +
   theme(legend.position = "bottom")
 
-p1b <- ggplot(curve_df, aes(conc, viability, colour = series)) +
+p1b <- ggplot(curve_df, aes(conc, viability, colour = series, linetype=series)) +
   geom_line(linewidth = 1.3) +
   annotate("segment", x = CONC, xend = CONC, y = v_lo, yend = v_hi,
            linewidth = 1.2, colour = "grey25",
@@ -324,6 +326,8 @@ p1b <- ggplot(curve_df, aes(conc, viability, colour = series)) +
   scale_x_log10() +
   scale_colour_manual(values = c("CPD-A" = "#1f6fb4",
                                  "3\u00d7 higher IC50" = "#7a3b8f")) +
+  scale_linetype_manual(values = c("CPD-A"=1, "3\u00d7 higher IC50"=2)) +
+
   labs(title = "Simplified to single-conc. measurement",
        subtitle = sprintf("38 percentage points (pp) is equivalent to %dx IC50",
                           thr$mcid_fold),
@@ -349,8 +353,19 @@ p1c <- sim$mcid_by_donor %>%
 ```
 
 ```{r m1-threshold, fig.width=8, fig.height=4}
-(p1a | p1b)
+(p1a_prime | p1b)
 ```
+
+```{r mod1_dataset}
+mod1_dataset <- sim$mcid_by_donor
+colnames(mod1_dataset) <- c("Donor", "Readout_CPD-A", "Readout_CPD-B", "Difference")
+gt::gt(mod1_dataset) %>%
+  fmt_number(
+    decimals = 1,
+    use_seps = FALSE
+  )
+```
+
 From Module III onwards the
 comparison itself is made on the IC~50~ scale. Note in passing that translating
 at a single "typical" lot would have given
@@ -391,7 +406,7 @@ one_lot <- viab %>%
 
 export_data(one_lot, "m02_one_lot",
             "six wells from a single hepatocyte lot, both compounds")
-one_lot
+one_lot %>% dplyr::select(-raw_rlu)
 ```
 
 ### Show the points, not a bar
@@ -405,7 +420,7 @@ p2a <- one_lot %>%
                colour = "grey30") +
   tight_x() +
   scale_colour_manual(values = cpd_cols, guide = "none") +
-  labs(title = "What a bar chart shows", subtitle = "two numbers and a whisker",
+  labs(title = "Bar chart",
        x = NULL, y = "Viability (% of vehicle)") +
   coord_cartesian(ylim = c(0, 80))
 
@@ -417,7 +432,7 @@ p2b <- one_lot %>%
                colour = "grey25", linewidth = 0.6) +
   tight_x() +
   scale_colour_manual(values = cpd_cols, guide = "none") +
-  labs(title = "What the data show", subtitle = "three wells, and their mean",
+  labs(title = "Dot plot (strip plot)", subtitle = "Horizon bars: mean values",
        x = NULL, y = NULL) +
   coord_cartesian(ylim = c(0, 80))
 
@@ -457,9 +472,9 @@ ggplot(repeats, aes(experiment, viability)) +
   geom_line(data = rep_means, aes(y = mean_viability), colour = "#1f6fb4",
             linewidth = 0.9) +
   annotate("text", x = 20.4, y = true_v, hjust = 1, vjust = -0.8, size = GEOM_PT,
-           colour = "#c1443b", label = "the unchanging truth") +
-  labs(title = "Twenty repeats of one unchanged experiment",
-       subtitle = "grey: wells  ·  blue: mean of each repeat",
+           colour = "#c1443b", label = "Ground truth") +
+  labs(title = "Twenty repeats of one experiment",
+       subtitle = "grey/blue dots: individual technical replicates and mean of each repeat",
        x = "Repeat of the experiment", y = "Viability (% of vehicle)")
 ```
 

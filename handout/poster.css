@@ -1,0 +1,100 @@
+/* One A4 poster: the workshop's nine questions, large enough to read from a
+   few steps away. The source is generated from handout/one-pager.md by
+   handout/poster.awk, so the wording here can never drift from the handout.
+
+   Sizes follow the same discipline as the handout: one knob on html, every
+   other size in em, and `make poster` fails if the sheet spills to a second
+   page. The fit is made against the Liberation Sans / Arial fallback, which
+   is the wider of the two fonts this may be rendered in. */
+
+@page {
+  size: A4;
+  margin: 13mm 13mm 10mm 13mm;
+}
+
+/* the one knob --- see the note in handout/one-pager.css */
+html { font-size: 15pt; }
+
+body {
+  font-family: "Source Sans 3", "Source Sans Pro", "DejaVu Sans", sans-serif;
+  line-height: 1.32;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+/* pandoc --standalone emits its own <h1 class="title"> from the metadata */
+h1.title, header#title-block-header { display: none; }
+
+h1 {
+  font-size: 1.72em;
+  line-height: 1.1;
+  margin: 0 0 0.3em 0;
+  padding-bottom: 0.26em;
+  border-bottom: 2.6pt solid #1f6fb4;
+  color: #004495;
+}
+
+/* the byline */
+h1 + p {
+  margin: 0 0 0.7em 0;
+  font-size: 0.8em;
+  color: #004495;
+}
+
+/* the standfirst */
+h1 + p + p {
+  margin: 0 0 1em 0;
+  font-size: 0.92em;
+  color: #3a3a3a;
+}
+
+/* ---- the questions ----------------------------------------------------- */
+.questions p {
+  margin: 0 0 0.7em 0;
+  padding: 0.33em 0.5em 0.37em 0.7em;
+  font-weight: 400;
+  font-size: 1em;
+  color: #004495;
+  background: #f2f6fa;
+  border-left: 3.2pt solid #1f6fb4;
+  break-inside: avoid;
+}
+.questions p:last-child { margin-bottom: 0; }
+
+/* the "Module N" label the source writes itself */
+.questions p strong:first-child {
+  color: #a14400;
+  font-weight: 700;
+  letter-spacing: 0.015em;
+}
+
+/* ---- the breaks -------------------------------------------------------- */
+/* a divider rather than an item: no tint, no left rule, so the eye reads the
+   questions as one run and the breaks as the seams between them */
+.questions .pause { margin: 0 0 0.52em 0; break-inside: avoid; }
+
+.questions .pause p {
+  margin: 0;
+  padding: 0.16em 0 0.2em 0;
+  background: none;
+  border-left: none;
+  border-top: 1pt dashed #b9c6d2;
+  border-bottom: 1pt dashed #b9c6d2;
+  color: #2ca25f;
+  font-size: 1em;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-align: center;
+  text-transform: uppercase;
+}
+
+/* ---- closing line ------------------------------------------------------ */
+body > p:last-of-type {
+  margin: 1em 0 0 0;
+  padding: 0.42em 0.8em;
+  background: #004495;
+  color: #ffffff;
+  text-align: center;
+  font-size: 1.25em;
+  border-radius: 1mm;
+}

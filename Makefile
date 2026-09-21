@@ -4,6 +4,7 @@
 #   make appendix   the instructor's technical document
 #   make slides     an editable PowerPoint deck
 #   make handout    the one-page A4 summary
+#   make poster     the A4 poster of the nine questions
 #   make all        everything
 #   make tools      show which R / pandoc / PDF engine was picked up here
 #
@@ -91,18 +92,26 @@ HANDOUT_CSS := handout/one-pager.css
 HANDOUT_HTML:= $(OUTDIR)/2026-09-workshop-one-pager.html
 HANDOUT_OUT := $(OUTDIR)/2026-09-workshop-one-pager.pdf
 
+# The poster is the handout minus the answers, extracted from the same source.
+POSTER_AWK  := handout/poster.awk
+POSTER_CSS  := handout/poster.css
+POSTER_SRC  := $(OUTDIR)/poster.md
+POSTER_HTML := $(OUTDIR)/2026-09-workshop-poster.html
+POSTER_OUT  := $(OUTDIR)/2026-09-workshop-poster.pdf
+
 .DEFAULT_GOAL := help
-.PHONY: all help tools require-pandoc notebook appendix slides handout \
+.PHONY: all help tools require-pandoc notebook appendix slides handout poster \
         reference-doc check-onepage clean distclean
 
 ## ---------------------------------------------------------------- targets
 
-all: notebook appendix slides handout
+all: notebook appendix slides handout poster
 
 notebook: $(NOTEBOOK).html
 appendix: $(APPENDIX).html
 slides:   $(SLIDES_OUT)
 handout:  $(HANDOUT_OUT)
+poster:   $(POSTER_OUT)
 
 ## ------------------------------------------------------------- R documents
 
@@ -141,27 +150,43 @@ $(HANDOUT_OUT): $(HANDOUT_SRC) $(HANDOUT_CSS) | $(OUTDIR) require-pandoc
 	  --metadata title="Statistical thinking --- one page" -o $(HANDOUT_HTML)
 	$(call html2pdf,$(HANDOUT_HTML),$@)
 	@echo "wrote $@ (via $(PDF_ENGINE))"
-	@$(MAKE) --no-print-directory check-onepage
+	@$(MAKE) --no-print-directory check-onepage PDF=$@ CSS=$(HANDOUT_CSS)
 
-# The handout is only useful if it is genuinely one page, and how much space
-# the text takes depends on which fonts the machine has, so this is measured
-# after every build rather than assumed. The free-space figure is the headroom
-# you have for enlarging the type.
+## ------------------------------------------------------------------ poster
+
+# The nine questions on one A4 sheet, for the wall. Generated from the
+# handout source so the wording is guaranteed to be the same.
+$(POSTER_SRC): $(HANDOUT_SRC) $(POSTER_AWK) | $(OUTDIR)
+	awk -f $(POSTER_AWK) $< > $@
+
+$(POSTER_OUT): $(POSTER_SRC) $(POSTER_CSS) | $(OUTDIR) require-pandoc
+	$(PANDOC) $< --standalone --embed-resources --css=$(POSTER_CSS) \
+	  --metadata title="Statistical thinking --- poster" -o $(POSTER_HTML)
+	$(call html2pdf,$(POSTER_HTML),$@)
+	@echo "wrote $@ (via $(PDF_ENGINE))"
+	@$(MAKE) --no-print-directory check-onepage PDF=$@ CSS=$(POSTER_CSS)
+
+## ------------------------------------------------------------- page check
+
+# A one-page sheet is only useful if it is genuinely one page, and how much
+# space the text takes depends on which fonts the machine has, so this is
+# measured after every build rather than assumed. The free-space figure is
+# the headroom you have for enlarging the type.
 check-onepage:
-	@n=$$(pdfinfo $(HANDOUT_OUT) 2>/dev/null | awk '/^Pages:/{print $$2}'); \
+	@n=$$(pdfinfo $(PDF) 2>/dev/null | awk '/^Pages:/{print $$2}'); \
 	if [ -z "$$n" ]; then \
-	  n=$$($(R) -e 'cat(length(pdftools::pdf_info("$(HANDOUT_OUT)")$$pages))' 2>/dev/null); \
+	  n=$$($(R) -e 'cat(length(pdftools::pdf_info("$(PDF)")$$pages))' 2>/dev/null); \
 	fi; \
 	if [ -z "$$n" ]; then \
 	  echo "  (page count not checked: no pdfinfo, no pdftools)"; \
 	elif [ "$$n" = "1" ]; then \
-	  free=$$(pdftotext -f 1 -l 1 -bbox $(HANDOUT_OUT) - 2>/dev/null \
+	  free=$$(pdftotext -f 1 -l 1 -bbox $(PDF) - 2>/dev/null \
 	          | grep -o 'yMax="[0-9.]*"' | grep -o '[0-9.]*' | sort -g | tail -1 \
 	          | awk '{printf " (%.0f mm free at the foot)", (841.89-$$1)*25.4/72}'); \
 	  echo "  page count: 1 --- good$$free"; \
 	else \
-	  echo "  ERROR: the handout came out as $$n pages."; \
-	  echo "         Lower 'html { font-size }' in $(HANDOUT_CSS) by 0.2pt and"; \
+	  echo "  ERROR: $(PDF) came out as $$n pages."; \
+	  echo "         Lower 'html { font-size }' in $(CSS) by 0.2pt and"; \
 	  echo "         rebuild --- that one value scales the whole sheet."; \
 	  exit 1; \
 	fi
@@ -184,7 +209,8 @@ require-pandoc:
 	  exit 1; }
 
 clean:
-	rm -f $(SLIDES_OUT) $(HANDOUT_OUT) $(HANDOUT_HTML)
+	rm -f $(SLIDES_OUT) $(HANDOUT_OUT) $(HANDOUT_HTML) \
+	      $(POSTER_OUT) $(POSTER_HTML) $(POSTER_SRC)
 
 distclean: clean
 	rm -f $(NOTEBOOK).html $(APPENDIX).html
@@ -197,11 +223,12 @@ help:
 	@echo "  make appendix   instructor's document   -> $(APPENDIX).html"
 	@echo "  make slides     editable deck           -> $(SLIDES_OUT)"
 	@echo "  make handout    one-page A4 summary     -> $(HANDOUT_OUT)"
+	@echo "  make poster     A4 poster of questions  -> $(POSTER_OUT)"
 	@echo "  make all        all of the above"
 	@echo
 	@echo "  make tools           show the detected R / pandoc / PDF engine"
 	@echo "  make reference-doc   extract a PowerPoint template to restyle"
-	@echo "  make clean           remove the deck and the handout"
+	@echo "  make clean           remove the deck, the handout and the poster"
 	@echo "  make distclean       also remove rendered documents and figures"
 	@echo
 	@echo "  toolchain: $(PDF_ENGINE) for the PDF; pandoc $(if $(PANDOC),ok,MISSING)"

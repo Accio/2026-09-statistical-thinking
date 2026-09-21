@@ -72,6 +72,7 @@ make notebook   # participants' notebook  -> 2026-09-workshop-modules.html
 make appendix   # technical appendix      -> 2026-09-statistical-thinking.html
 make slides     # editable deck           -> output/2026-09-workshop-slides.pptx
 make handout    # one-page A4 summary     -> output/2026-09-workshop-one-pager.pdf
+make poster     # A4 poster of questions  -> output/2026-09-workshop-poster.pdf
 make all        # all of the above (about 70 s from clean)
 ```
 
@@ -98,7 +99,9 @@ Chrome honours the same `@page` rules in `handout/one-pager.css` as WeasyPrint, 
 | `slides/workshop-slides.md` | source of the deck — plain Markdown, edit this |
 | `handout/one-pager.md` | source of the A4 summary — agenda and key messages |
 | `handout/one-pager.css` | A4 page geometry and typography for the summary |
-| `Makefile` | builds all four outputs |
+| `handout/poster.awk` | pulls the poster out of `one-pager.md` — questions only |
+| `handout/poster.css` | A4 page geometry and typography for the poster |
+| `Makefile` | builds all five outputs |
 
 The handout is set from one knob: `html { font-size }` in
 `handout/one-pager.css`. Every other size is an `em`, so that single value
@@ -109,6 +112,17 @@ Sans / Arial fallback you get where Source Sans is not installed. `make
 handout` prints the free space it measured and **fails** if the summary ever
 spills onto a second page, so raising or lowering that one value is safe to
 try on either machine.
+
+The **poster** is the same sheet with the answers taken out: the title, the
+opening paragraph, the nine module questions and the closing line, set large
+enough to read from a few steps away, with the two 15-minute breaks marked
+between modules III/IV and VI/VII. It is not written by hand — `make poster`
+extracts it from `handout/one-pager.md` with `handout/poster.awk`, so editing
+a question in the handout changes the poster too and the two can never
+disagree. The breaks are the one thing the poster adds; which modules they
+follow is the `split("III VI", ...)` line at the top of `handout/poster.awk`.
+Its typography is tuned the same way, from `html { font-size }` in
+`handout/poster.css`, and it gets the same one-page check.
 
 The deck is generated as **PowerPoint**, so it stays editable after the build:
 101 slides, the notebook's own figures, and speaker notes with timings. It

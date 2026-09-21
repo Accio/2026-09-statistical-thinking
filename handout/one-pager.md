@@ -1,4 +1,4 @@
-# Statistical thinking: a workshop for experimental scientists
+# Statistical thinking: a workshop
 
 Jitao David Zhang and Christian Weinmann, September 2026
 
