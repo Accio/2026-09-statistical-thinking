@@ -78,14 +78,11 @@ h1 + p + p {
   padding: 0.16em 0 0.2em 0;
   background: none;
   border-left: none;
-  border-top: 1pt dashed #b9c6d2;
-  border-bottom: 1pt dashed #b9c6d2;
-  color: #2ca25f;
-  font-size: 1em;
-  font-weight: 700;
-  letter-spacing: 0.14em;
+  color: #0c9305;
+  font-size: 1.2em;
+  font-weight: 800;
+  letter-spacing: 0.04em;
   text-align: center;
-  text-transform: uppercase;
 }
 
 /* ---- closing line ------------------------------------------------------ */
@@ -96,5 +93,6 @@ body > p:last-of-type {
   color: #ffffff;
   text-align: center;
   font-size: 1.25em;
+  font-weight: 800;
   border-radius: 1mm;
 }

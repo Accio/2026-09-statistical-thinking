@@ -628,8 +628,9 @@ alias(fit_confounded)
 
 # Figures
 
-```{r results-figure, fig.width=7, fig.height=14.5}
+```{r prepare_curves}
 cpd_cols <- c("CPD-A" = "#1f6fb4", "CPD-B" = "#c1443b")
+
 
 grid <- tibble(logc = seq(log10(0.2), log10(1500), length.out = 200))
 curves <- fits %>%
@@ -638,7 +639,30 @@ curves <- fits %>%
   select(design, donor_id, compound, weekday, pred) %>%
   unnest(pred) %>%
   mutate(conc_uM = 10^logc)
+```
 
+
+```{r blocked_curves, fig.height=4, fig.width=5}
+blocked_curves <- curves %>% filter(design=="Blocked")
+is_sim_sample <- apply(sapply(conc_series, 
+                              function(x) blocked_curves$conc_uM>0.95*x & blocked_curves$conc_uM<1.05*x), 1, any)
+sim_blocked_curves <- blocked_curves[is_sim_sample,]
+ggplot(blocked_curves, aes(conc_uM, viability, colour = compound)) +
+  geom_line(aes(group = interaction(donor_id, compound)), alpha = 0.7,
+            linewidth = 0.8) +
+  geom_jitter(data=sim_blocked_curves, pch=4,
+              width=0.01, height=2) +
+  geom_hline(yintercept = 50, linetype = "dashed", colour = "grey40") +
+  geom_hline(yintercept = 100, linetype = "dotted", colour = "grey60") +
+  scale_x_log10(labels = scales::label_number(drop0trailing = TRUE)) +
+  scale_colour_manual(values = cpd_cols) +
+  coord_cartesian(ylim = c(-5, 118)) +
+  labs(title="Data overview",
+       x = "Concentration (µM)", y = "ATP (% of vehicle)") +
+  theme_ctg + theme(legend.position = "bottom")
+```
+
+```{r results-figure, fig.width=7, fig.height=14.5}
 ## A: curves, faceted by design
 pA <- ggplot(curves, aes(conc_uM, viability, colour = compound)) +
   geom_line(aes(group = interaction(donor_id, compound)), alpha = 0.7,

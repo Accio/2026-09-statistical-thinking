@@ -21,7 +21,7 @@
    the foot of the page, which is the margin of safety for a machine whose
    fonts or PDF engine set slightly wider. `make handout` reports the free
    space after every build and fails if the sheet spills onto a second page. */
-html { font-size: 10.6pt; }
+html { font-size: 10.2pt; }
 
 body {
   font-family: "Source Sans 3", "Source Sans Pro", "DejaVu Sans", sans-serif;

@@ -18,8 +18,8 @@ The workshop, consisting of nine modules, aims to help you become familiar with 
 **Module IV**: What are randomization and blocking, and why are they important for experimental design?
 :   If you have to compare A and B in an experiment run in two batches, test both A and B within each batch, instead of testing A in one batch and B in the other: This is the essence of *blocking*. When multiple factors may affect the outcome, block those you can, and randomize the rest.
 
-**Module V**: How do we compare two groups?
-:   While we are interested in the population, we only have samples and their measurements. Commonly used tools include the unpaired t-test, the paired t-test, and non-parametric tests. For more complex designs, we can use ANOVA (multiple groups) and linear regression (adjusting for covariates).
+**Module V**: How do we compare two or more groups?
+:   While we are interested in the population, we only have samples and their measurements. Commonly used tools include the unpaired t-test, the paired t-test, and non-parametric tests. For more complex designs, we can use ANOVA (multiple groups) and linear regression (continuous variables, and adjusting for covariates).
 
 **Module VI**: How do we detect and handle outliers?
 :   Use common sense, your experience, and prior knowledge or data to judge whether a value is an outlier. State the reasons explicitly, and in case of doubt, run statistical analyses with and without the outliers to test the sensitivity of your conclusion.

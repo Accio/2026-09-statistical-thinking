@@ -33,7 +33,7 @@ library(tidyverse)
 library(patchwork)
 library(ribiosUtils)   # ofactor, percentage
 library(ribiosPlot)    # openFileDevice, closeFileDevice
-library(DT)
+library(gt)
 
 source("R/simulate_workshop_data.R")
 set.seed(params$seed)
@@ -90,7 +90,7 @@ verdict_cols <- c("relevant difference" = "#3b7a57",
                   "inconclusive" = "#d9a441")
 
 forest <- function(d, title, subtitle = NULL, threshold = MCID_FOLD,
-                   xlab = "CPD-B / CPD-A  (fold shift in cytotoxicity IC50)") {
+                   xlab = "CPD-B / CPD-A  (cytotoxicity IC50 fold change)") {
   d <- d %>%
     mutate(row = factor(label, levels = rev(label)),
            verdict = case_when(is.na(lwr)      ~ "inconclusive",
@@ -285,13 +285,15 @@ p1a <- ggplot(curve_ab, aes(conc, viability, colour = compound)) +
   theme(legend.position = "bottom")
 
 ## --- B: the same shift, read vertically at one concentration ------------
+series_levels <- c("CPD-A", "3\u00d7 higher IC50")
 curve_df <- expand_grid(
-    series = c("CPD-A", "3\u00d7 higher IC50"),
+    series = series_levels,
     conc   = 10^seq(log10(0.3), log10(1000), length.out = 300)) %>%
   mutate(ic50 = if_else(series == "CPD-A",
                         sim$params$ic50_A,
                         sim$params$ic50_A * thr$mcid_fold),
-         viability = 100 * hill_viability(conc, ic50, sim$params$hill_A))
+         viability = 100 * hill_viability(conc, ic50, sim$params$hill_A)) %>%
+  mutate(series = factor(series, levels=series_levels))
 
 v_lo <- 100 * hill_viability(CONC, sim$params$ic50_A, sim$params$hill_A)
 v_hi <- 100 * hill_viability(CONC, sim$params$ic50_A * thr$mcid_fold,
@@ -432,7 +434,7 @@ p2b <- one_lot %>%
                colour = "grey25", linewidth = 0.6) +
   tight_x() +
   scale_colour_manual(values = cpd_cols, guide = "none") +
-  labs(title = "Dot plot (strip plot)", subtitle = "Horizon bars: mean values",
+  labs(title = "Dot plot (strip plot)", subtitle = "Horizontal bars: mean values",
        x = NULL, y = NULL) +
   coord_cartesian(ylim = c(0, 80))
 
@@ -442,12 +444,27 @@ p2a | p2b
 The bar chart is not wrong. It is simply compatible with almost any underlying
 data, which is why it is a poor default.
 
+```{r}
+one_lot_stat <- one_lot %>%
+  dplyr::select(compound, viability_pct) %>%
+  group_by(compound) %>%
+  summarise(mean_viability=mean(viability_pct),
+            sd_viability=sd(viability_pct)) %>%
+  mutate(CV=sd_viability/mean_viability)
+one_lot_stat %>%
+  gt %>%
+    fmt_number(
+    decimals = 2,
+    use_seps = FALSE
+  )
+```
+
 ### The mean moves every time
 
 Nothing about the lot or the compound changes below. The same measurement
 process is repeated twenty times, three wells at a time.
 
-```{r m2-mean-moves, fig.width=6.6, fig.height=3.5}
+```{r m2-mean-moves, fig.width=5, fig.height=3.5}
 set.seed(101)  ## fixed so the deck and handout stay in sync
 true_v <- 100 * hill_viability(CONC,
                                sim$truth$ic50_true[sim$truth$donor_id == "HH1" &
@@ -473,19 +490,100 @@ ggplot(repeats, aes(experiment, viability)) +
             linewidth = 0.9) +
   annotate("text", x = 20.4, y = true_v, hjust = 1, vjust = -0.8, size = GEOM_PT,
            colour = "#c1443b", label = "Ground truth") +
-  labs(title = "Twenty repeats of one experiment",
-       subtitle = "grey/blue dots: individual technical replicates and mean of each repeat",
+  labs(title = "20 experiments",
+       subtitle = "Individual replicates (gray) and mean (blue), respectively",
        x = "Repeat of the experiment", y = "Viability (% of vehicle)")
 ```
+
+```{r many_simulation, fig.height=4, fig.width=5}
+many_repeats <- tibble(experiment = rep(1:1000, each = 3)) %>%
+  mutate(well = rep(1:3, 1000),
+         viability = true_v * (1 + rnorm(n(), 0, tech_cv)))
+many_repeats_summary <- many_repeats %>%
+  group_by(experiment) %>% summarise(mean_viability=mean(viability),
+                                     sd_viability=sd(viability)) %>%
+  mutate(CV=sd_viability/mean_viability)
+{
+  compactPar()
+  hist(many_repeats_summary$mean_viability, breaks=100,
+       xlab="Mean viability of three replicates", ylab="Frequency",
+       col="lightblue",
+       main = "Histogram of sample mean in 1000 simulations")
+  abline(v=true_v, lty=2, lwd=2, col="#B2182B")
+  legend("topleft", 
+         legend=sprintf("HH1 true value: %.1f\nAvg. CV:%.1f%%", true_v, tech_cv*100), bty="n")
+}
+```
+
+```{r many_simulation_CV, fig.height=4, fig.width=5}
+{
+  compactPar()
+  hist(many_repeats_summary$CV, breaks=100,
+       xlab="CV of three replicates", ylab="Frequency",
+       col="mistyrose",
+       main = "Histogram of CV in 1000 simulations")
+  abline(v=tech_cv, lty=2, lwd=2, col="#2B3fB3")
+  legend("topright", 
+         legend=sprintf("True CV:%.1f%%", tech_cv*100), bty="n")
+}
+```
+
+```{r many_more_simulation, fig.height=8, fig.width=8}
+many_more_repeats <- tibble(experiment = rep(1:1000, each = 8)) %>%
+  mutate(well = rep(1:8, 1000),
+         viability = true_v * (1 + rnorm(n(), 0, tech_cv)))
+many_more_repeats_summary <- many_more_repeats %>%
+  group_by(experiment) %>% summarise(mean_viability=mean(viability),
+                                     sd_viability=sd(viability)) %>%
+  mutate(CV=sd_viability/mean_viability)
+{
+  compactPar(mfrow=c(2,2))
+  
+  hist(many_repeats_summary$mean_viability, breaks=100,
+       xlab="Mean viability of three replicates", ylab="Frequency",
+       col="lightblue", xlim=c(35,50),
+       main = "Histogram of sample mean in 1000 simulations")
+  abline(v=true_v, lty=2, lwd=2, col="#B2182B")
+  legend("topleft", 
+         legend=sprintf("HH1 true value: %.1f\nAvg. CV:%.1f%%", true_v, tech_cv*100), bty="n")
+  
+    hist(many_repeats_summary$CV, breaks=100,
+       xlab="CV of three replicates", ylab="Frequency",
+       col="mistyrose", xlim=c(0, 0.35),
+       main = "Histogram of CV in 1000 simulations")
+  abline(v=tech_cv, lty=2, lwd=2, col="#2B3fB3")
+  legend("topright", 
+         legend=sprintf("True CV:%.1f%%", tech_cv*100), bty="n")
+  
+
+  hist(many_more_repeats_summary$mean_viability, breaks=100,
+       xlab="Mean viability of eight replicates", ylab="Frequency",
+       col="skyblue",  xlim=c(35,50),
+       main = "Histogram of sample mean in 1000 simulations")
+  abline(v=true_v, lty=2, lwd=2, col="#B2182B")
+  legend("topleft", 
+         legend=sprintf("HH1 true value: %.1f\nAvg. CV:%.1f%%", true_v, tech_cv*100), bty="n")
+  
+    hist(many_more_repeats_summary$CV, breaks=100,
+       xlab="CV of eight replicates", ylab="Frequency",
+       col="#FFDECC", xlim=c(0, 0.35), lwd=0.05,
+       main = "Histogram of CV in 1000 simulations")
+  abline(v=tech_cv, lty=2, lwd=2, col="#2B3fB3")
+  legend("topright", 
+         legend=sprintf("True CV:%.1f%%", tech_cv*100), bty="n")
+}
+```
+
 
 The truth is a fixed line. Every mean sits somewhere else. That gap is
 **sampling uncertainty**, and it exists even when the experiment is perfect.
 A confidence interval, later, is nothing more than an attempt to say how wide
 this cloud is — from a single experiment.
 
+
 ### Not all variation is the same
 
-```{r m2-taxonomy, fig.width=5.4, fig.height=3.7}
+```{r m2-taxonomy, fig.width=5, fig.height=3.7}
 set.seed(102)  ## fixed so the deck and handout stay in sync
 n_lots <- 8
 base   <- 100 * hill_viability(CONC, sim$params$ic50_A, sim$params$hill_A)
@@ -494,11 +592,11 @@ lot_shift <- 100 * hill_viability(
   sim$params$hill_A)
 
 taxonomy <- bind_rows(
-  tibble(layer = "1. measurement only",
+  tibble(layer = "1. Technical",
          value = base * (1 + rnorm(n_lots * 3, 0, 0.06))),
-  tibble(layer = "2. + lot biology",
+  tibble(layer = "2. + Donor effect",
          value = rep(lot_shift, each = 3) * (1 + rnorm(n_lots * 3, 0, 0.06))),
-  tibble(layer = "3. + a run-day shift",
+  tibble(layer = "3. + Batch effect",
          value = rep(lot_shift, each = 3) * (1 + rnorm(n_lots * 3, 0, 0.06)) *
                  rep(c(1, 1 / 1.2), each = n_lots * 3 / 2))
 ) %>%
@@ -510,8 +608,7 @@ ggplot(taxonomy, aes(layer, value, colour = layer)) +
   stat_summary(fun = mean, geom = "crossbar", width = 0.58, colour = "grey25") +
   tight_x() +
   scale_colour_brewer(palette = "Dark2", guide = "none") +
-  labs(title = "Variance sources, switched on one at a time",
-       subtitle = "the three layers are not equally fixable",
+  labs(title = "Sources of variation and their impact on readout",
        x = NULL, y = "Viability (% of vehicle)")
 ```
 
@@ -526,7 +623,7 @@ Four kinds, and they call for four different responses:
 
 ### Bias and variance
 
-```{r m2-target, fig.width=6, fig.height=6}
+```{r m2-target, fig.width=4, fig.height=4}
 set.seed(103)  ## fixed so the deck and handout stay in sync
 target_data <- expand_grid(
     bias     = c("unbiased", "biased"),
@@ -551,8 +648,7 @@ ggplot(target_data) +
   geom_point(aes(x = 0, y = 0), colour = "grey40", size = 1.6, shape = 3) +
   facet_grid(variance ~ bias) +
   coord_equal(xlim = c(-2.55, 2.55), ylim = c(-2.55, 2.55), expand = FALSE) +
-  labs(title = "Bias is consistently wrong; variance is noisy",
-       subtitle = "the cross is the truth",
+  labs(title = "Bias and variance",
        x = NULL, y = NULL) +
   theme(axis.text = element_blank(), axis.ticks = element_blank(),
         panel.grid = element_blank())
@@ -610,11 +706,11 @@ are the quantity we actually decide on.
 viab %>%
   transmute(Lot = donor_id, Compound = compound, Day = weekday,
             Well = replicate,
-            `Raw RLU` = raw_rlu,
+            ##`Raw RLU` = raw_rlu,
             `Viability (%)` = viability_pct,
             `IC50 (µM)` = ic50_uM) %>%
   knitr::kable(align = "llcrrrr",
-               caption = "All 48 wells. Viability is what the reader gave; the IC50 is the same number put on the decision scale.") %>%
+               caption = "Data of 48 wells. Viability is the output of the plate reader at one particular concentration of both compounds. IC50 is derived from fitting a Hill function to the concentration-response data.") %>%
   kableExtra::kable_styling(bootstrap_options = c("striped", "condensed"),
                             full_width = FALSE, font_size = 12) %>%
   kableExtra::scroll_box(height = "360px")
@@ -622,14 +718,15 @@ viab %>%
 
 ```{r m3-table-lots}
 lot_tab <- dm %>%
-  transmute(Lot = donor_id, Sex = donor_sex, Age = donor_age, Day = weekday,
-            Compound = compound, Wells = n_wells,
+  transmute(Lot = donor_id, #Sex = donor_sex, Age = donor_age, Day = weekday,
+            Compound = compound, ##Wells = n_wells,
             `Mean viability (%)` = round(viability, 1),
-            `SD across wells` = round(sd_wells, 1),
+            `SD` = round(sd_wells, 1),
+            `CV (%)`=round(`SD`/`Mean viability (%)`*100, 1),
             `IC50 (µM)` = round(ic50_uM, 2))
 
-knitr::kable(lot_tab, align = "lccllrrr",
-             caption = "The 16 lot-level summaries. This is the level at which the data are analyzed.") %>%
+knitr::kable(lot_tab, align = "llrrrr",
+             caption = "The 16 lot-compound groups") %>%
   kableExtra::kable_styling(bootstrap_options = c("striped", "condensed"),
                             full_width = FALSE, font_size = 12)
 ```
@@ -641,7 +738,7 @@ folds %>%
             `CPD-B IC50 (µM)` = round(`CPD-B`, 2),
             `Fold shift` = round(fold, 2)) %>%
   knitr::kable(align = "lrrr",
-               caption = "The 8 within-lot fold shifts - one number per lot, and the estimand of the whole study.") %>%
+               caption = "The 8 lot groups") %>%
   kableExtra::kable_styling(bootstrap_options = c("striped", "condensed"),
                             full_width = FALSE, font_size = 12)
 ```
@@ -696,12 +793,12 @@ export_data(pseudo, "m03_pseudoreplication",
 pseudo
 ```
 
-```{r m3-pseudo-fig, fig.width=6.4, fig.height=3.2}
+```{r m3-pseudo-fig, fig.width=7, fig.height=3.2}
 pseudo %>%
-  transmute(label = c("48 wells, as if independent", "8 lots, correctly"),
+  transmute(label = c("48 wells as 24 comparisons", "8 lots as 8 comparisons"),
             estimate = fold, lwr = ci_low, upr = ci_high) %>%
-  forest("Same numbers, same estimate, different confidence",
-         "counting wells narrows the interval without adding information")
+  forest("Pseudoreplicate versus independent replicate",
+         "Treating pseudoreplicate as biological replicate inflates the results")
 ```
 
 The point estimate is identical to the second decimal:
