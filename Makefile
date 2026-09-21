@@ -5,15 +5,74 @@
 #   make slides     an editable PowerPoint deck
 #   make handout    the one-page A4 summary
 #   make all        everything
+#   make tools      show which R / pandoc / PDF engine was picked up here
 #
 # The deck and the handout are built from plain Markdown sources in slides/
 # and handout/ --- edit those, not the generated files. The deck reuses the
 # figures the notebook writes to output/figures/, so `make slides` will build
 # the notebook first if the figures are missing or stale.
 
-R           := Rscript
-PANDOC      := pandoc
-WEASYPRINT  := weasyprint
+## -------------------------------------------------------------- toolchain
+#
+# The build has to run in two places: a laptop, where Rscript, pandoc and
+# weasyprint are all on the PATH, and an HPC login node, where R and pandoc
+# come from environment modules and WeasyPrint is not installed at all.
+# Everything below is detected at parse time; `make tools` shows what was
+# found, and R / PANDOC / HTML-to-PDF can each be overridden on the command
+# line, e.g. `make handout WEASYPRINT=/path/to/weasyprint`.
+
+SHELL := /bin/bash
+
+# lastword: a login shell may print a banner on stdout before the path.
+detect = $(lastword $(shell command -v $(1) 2>/dev/null))
+
+R ?= $(call detect,Rscript)
+ifneq ($(R),)
+  R_DESC := $(R)
+else
+  # HPC: R comes from environment modules and needs that whole environment,
+  # not just its binary on the PATH, so every call goes through the loader.
+  R_LOADER := $(wildcard $(HOME)/scripts/load-bioinfo-R.bash)
+  ifneq ($(R_LOADER),)
+    R      := bash -lc 'source $(R_LOADER) >/dev/null 2>&1; exec Rscript "$$@"' --
+    R_DESC := Rscript via $(R_LOADER)
+  else
+    R      := Rscript
+    R_DESC := NOT FOUND
+  endif
+endif
+
+PANDOC ?= $(call detect,pandoc)
+ifeq ($(PANDOC),)
+  PANDOC := $(lastword $(shell bash -lc 'module load Pandoc >/dev/null 2>&1 && command -v pandoc' 2>/dev/null))
+endif
+
+# rmarkdown::render() needs to find pandoc too, not just this Makefile.
+ifneq ($(PANDOC),)
+  PANDOC_DIR := $(patsubst %/,%,$(dir $(PANDOC)))
+  export RSTUDIO_PANDOC := $(PANDOC_DIR)
+  export PATH := $(PANDOC_DIR):$(PATH)
+endif
+
+# HTML -> PDF: WeasyPrint if present, otherwise headless Chrome, which
+# honours the same @page rules in handout/one-pager.css.
+WEASYPRINT ?= $(call detect,weasyprint)
+CHROME     ?= $(firstword $(foreach c,google-chrome chromium chromium-browser,$(call detect,$(c))))
+CHROME_FLAGS := --headless --disable-gpu --no-sandbox --no-pdf-header-footer --log-level=3
+
+ifneq ($(WEASYPRINT),)
+  PDF_ENGINE := weasyprint
+  # $(1) input HTML, $(2) output PDF
+  html2pdf    = $(WEASYPRINT) '$(1)' '$(2)'
+else ifneq ($(CHROME),)
+  PDF_ENGINE := $(notdir $(CHROME)) --headless
+  # Chrome resolves both paths against its own cwd, and chatters on stderr.
+  html2pdf    = $(CHROME) $(CHROME_FLAGS) --print-to-pdf='$(abspath $(2))' '$(abspath $(1))' 2>/dev/null; test -s '$(2)'
+else
+  PDF_ENGINE := none found
+  html2pdf    = { echo "ERROR: need weasyprint or a Chrome/Chromium binary to make the PDF handout."; \
+	            echo "       the HTML version is in $(HANDOUT_HTML)"; exit 1; }
+endif
 
 NOTEBOOK    := 2026-09-workshop-modules
 APPENDIX    := 2026-09-statistical-thinking
@@ -33,7 +92,8 @@ HANDOUT_HTML:= $(OUTDIR)/2026-09-workshop-one-pager.html
 HANDOUT_OUT := $(OUTDIR)/2026-09-workshop-one-pager.pdf
 
 .DEFAULT_GOAL := help
-.PHONY: all help notebook appendix slides handout reference-doc check-onepage clean distclean
+.PHONY: all help tools require-pandoc notebook appendix slides handout \
+        reference-doc check-onepage clean distclean
 
 ## ---------------------------------------------------------------- targets
 
@@ -62,39 +122,66 @@ $(FIGSTAMP): $(NOTEBOOK).html
 # Editable in PowerPoint, LibreOffice Impress and Google Slides.
 # Run `make reference-doc` once to get slides/reference.pptx, restyle it to
 # your template, and it is picked up automatically from then on.
-$(SLIDES_OUT): $(SLIDES_SRC) $(FIGSTAMP) | $(OUTDIR)
+$(SLIDES_OUT): $(SLIDES_SRC) $(FIGSTAMP) | $(OUTDIR) require-pandoc
 	$(PANDOC) $< --slide-level=2 --resource-path=.:$(FIGDIR) \
 	  $(if $(wildcard $(SLIDES_REF)),--reference-doc=$(SLIDES_REF),) \
 	  -o $@
 	@echo "wrote $@"
 
-reference-doc:
+reference-doc: require-pandoc
 	@mkdir -p slides
 	$(PANDOC) --print-default-data-file reference.pptx > $(SLIDES_REF)
 	@echo "wrote $(SLIDES_REF) --- restyle it and rebuild with 'make slides'"
 
 ## ----------------------------------------------------------------- handout
 
-# One A4 page, from Markdown, via pandoc and WeasyPrint.
-$(HANDOUT_OUT): $(HANDOUT_SRC) $(HANDOUT_CSS) | $(OUTDIR)
+# One A4 page, from Markdown, via pandoc and whichever PDF engine is around.
+$(HANDOUT_OUT): $(HANDOUT_SRC) $(HANDOUT_CSS) | $(OUTDIR) require-pandoc
 	$(PANDOC) $< --standalone --embed-resources --css=$(HANDOUT_CSS) \
 	  --metadata title="Statistical thinking --- one page" -o $(HANDOUT_HTML)
-	$(WEASYPRINT) $(HANDOUT_HTML) $@
-	@echo "wrote $@"
+	$(call html2pdf,$(HANDOUT_HTML),$@)
+	@echo "wrote $@ (via $(PDF_ENGINE))"
 	@$(MAKE) --no-print-directory check-onepage
 
-# The handout is only useful if it is genuinely one page.
+# The handout is only useful if it is genuinely one page, and how much space
+# the text takes depends on which fonts the machine has, so this is measured
+# after every build rather than assumed. The free-space figure is the headroom
+# you have for enlarging the type.
 check-onepage:
-	@n=$$($(R) -e 'cat(length(pdftools::pdf_info("$(HANDOUT_OUT)")$$pages))' 2>/dev/null \
-	     || pdfinfo $(HANDOUT_OUT) 2>/dev/null | awk '/^Pages:/{print $$2}'); \
-	if [ -z "$$n" ]; then echo "  (page count not checked: no pdfinfo/pdftools)"; \
-	elif [ "$$n" = "1" ]; then echo "  page count: 1 --- good"; \
-	else echo "  WARNING: handout is $$n pages, trim handout/one-pager.md"; fi
+	@n=$$(pdfinfo $(HANDOUT_OUT) 2>/dev/null | awk '/^Pages:/{print $$2}'); \
+	if [ -z "$$n" ]; then \
+	  n=$$($(R) -e 'cat(length(pdftools::pdf_info("$(HANDOUT_OUT)")$$pages))' 2>/dev/null); \
+	fi; \
+	if [ -z "$$n" ]; then \
+	  echo "  (page count not checked: no pdfinfo, no pdftools)"; \
+	elif [ "$$n" = "1" ]; then \
+	  free=$$(pdftotext -f 1 -l 1 -bbox $(HANDOUT_OUT) - 2>/dev/null \
+	          | grep -o 'yMax="[0-9.]*"' | grep -o '[0-9.]*' | sort -g | tail -1 \
+	          | awk '{printf " (%.0f mm free at the foot)", (841.89-$$1)*25.4/72}'); \
+	  echo "  page count: 1 --- good$$free"; \
+	else \
+	  echo "  ERROR: the handout came out as $$n pages."; \
+	  echo "         Lower 'html { font-size }' in $(HANDOUT_CSS) by 0.2pt and"; \
+	  echo "         rebuild --- that one value scales the whole sheet."; \
+	  exit 1; \
+	fi
 
 $(OUTDIR):
 	@mkdir -p $(OUTDIR)
 
 ## ------------------------------------------------------------------- admin
+
+# What the build resolved to here. Run this first if a target fails.
+tools:
+	@echo "Rscript    : $(R_DESC)"
+	@echo "pandoc     : $(if $(PANDOC),$(PANDOC),NOT FOUND --- try 'module load Pandoc')"
+	@echo "HTML -> PDF: $(PDF_ENGINE)"
+
+require-pandoc:
+	@test -n "$(PANDOC)" || { \
+	  echo "ERROR: pandoc not found."; \
+	  echo "       laptop: install it; HPC: 'module load Pandoc', or pass PANDOC=/path/to/pandoc"; \
+	  exit 1; }
 
 clean:
 	rm -f $(SLIDES_OUT) $(HANDOUT_OUT) $(HANDOUT_HTML)
@@ -112,6 +199,9 @@ help:
 	@echo "  make handout    one-page A4 summary     -> $(HANDOUT_OUT)"
 	@echo "  make all        all of the above"
 	@echo
+	@echo "  make tools           show the detected R / pandoc / PDF engine"
 	@echo "  make reference-doc   extract a PowerPoint template to restyle"
 	@echo "  make clean           remove the deck and the handout"
 	@echo "  make distclean       also remove rendered documents and figures"
+	@echo
+	@echo "  toolchain: $(PDF_ENGINE) for the PDF; pandoc $(if $(PANDOC),ok,MISSING)"

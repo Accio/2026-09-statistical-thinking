@@ -1,6 +1,5 @@
 ---
-title: "Statistical thinking for experimental scientists"
-subtitle: "Ten modules around one small CellTiter-Glo dataset"
+title: "Statistical thinking for wet-lab experts"
 author: "Jitao David Zhang"
 date: "`r format(Sys.Date(), '%d %B %Y')`"
 output:
@@ -205,9 +204,7 @@ an air bubble, and one lot that is genuinely more sensitive than the rest.
 
 ### Story
 
-A project team wants to know whether to drop CPD-B. Someone says "run the
-viability assay and tell me if it's significant". That instruction cannot be
-carried out, because it does not say what would count as an answer.
+A project team wants to know whether they should continue developing the candidate CPD-B, depending on the question whether CPD-B increases IC50 in the cytotoxity data at at least three folds. If someone says "run the viability assay and tell me if it's significant", we cannot tell: because it does not say what would count as significant.
 
 Five questions turn it into an experiment:
 
@@ -222,7 +219,7 @@ Five questions turn it into an experiment:
 ### The sentence every experiment should be able to complete
 
 > I want to compare **viability at `r CONC` µM** in **primary human
-> hepatocyte lots** because I need to decide **whether CPD-B is materially
+> hepatocyte lots** because I need to decide **whether CPD-B is substantially
 > less cytotoxic than CPD-A**.
 
 ### The threshold comes before the data
@@ -253,7 +250,7 @@ $$\mathrm{IC}_{50} = c \left(\frac{v}{100 - v}\right)^{1/h}$$
 and it is steep at the ends — a lot sitting near 0% or 100% viability gives an
 IC~50~ that moves a great deal for a small change in the reading.
 
-```{r m1-threshold, fig.width=7, fig.height=7.6}
+```{r m1-threshold-prepare}
 ## --- A: the two compounds, and the shift read horizontally --------------
 curve_ab <- expand_grid(
     tibble(compound = c("CPD-A", "CPD-B"),
@@ -274,7 +271,7 @@ p1a <- ggplot(curve_ab, aes(conc, viability, colour = compound)) +
            arrow = arrow(ends = "both", length = unit(0.16, "cm"))) +
   annotate("label", x = sqrt(ic50_A * ic50_B), y = 50,
            label = sprintf("%.0f-fold", thr$true_fold), size = GEOM_PT,
-           label.padding = unit(0.12, "lines")) +
+           label.padding = unit(0.02, "lines")) +
   ## and where the decision threshold would have been
   annotate("segment", x = ic50_T, xend = ic50_T, y = 0, yend = 50,
            linetype = "dashed", colour = "#7a3b8f", linewidth = 0.9) +
@@ -282,8 +279,7 @@ p1a <- ggplot(curve_ab, aes(conc, viability, colour = compound)) +
            label = "3-fold", size = GEOM_PT, colour = "#7a3b8f") +
   scale_x_log10() +
   scale_colour_manual(values = cpd_cols) +
-  labs(title = "A  The two compounds",
-       subtitle = "the shift, read horizontally",
+  labs(title = "Q: is there a substantial shift in IC50?",
        x = "Concentration (µM)", y = "ATP (% of vehicle)") +
   theme(legend.position = "bottom")
 
@@ -300,6 +296,23 @@ v_lo <- 100 * hill_viability(CONC, sim$params$ic50_A, sim$params$hill_A)
 v_hi <- 100 * hill_viability(CONC, sim$params$ic50_A * thr$mcid_fold,
                              sim$params$hill_A)
 
+p1a_prime <- ggplot(curve_df, aes(conc, viability, colour = series, linetype = series)) +
+  geom_line(linewidth = 1.3) +
+  geom_hline(yintercept = 50, linetype = "dotted", colour = "grey55") +
+  ## the shift as a pharmacologist reads it: along the 50% line, left to right
+  annotate("segment", x = ic50_A, xend = ic50_A * thr$mcid_fold, y = 50, yend = 50,
+           linewidth = 1.1, colour = "grey25",
+           arrow = arrow(ends = "both", length = unit(0.16, "cm"))) +
+  ## and where the decision threshold would have been
+  annotate("text", x = ic50_T, y = 50, hjust = -0.08, vjust = 0,
+           label = "3-fold", size = GEOM_PT, colour = "grey25") +
+  scale_x_log10(breaks=c(1, 10, 30, 100, 1000)) +
+  scale_colour_manual(values = cpd_cols) +
+  scale_linetype_manual(values = c("CPD-A"=1, "3\u00d7 higher IC50"=2)) +
+  labs(title = "Q: is there a substantial shift in IC50?",
+       x = "Concentration (µM)", y = "ATP (% of vehicle)") +
+  theme(legend.position = "bottom")
+
 p1b <- ggplot(curve_df, aes(conc, viability, colour = series)) +
   geom_line(linewidth = 1.3) +
   annotate("segment", x = CONC, xend = CONC, y = v_lo, yend = v_hi,
@@ -311,8 +324,9 @@ p1b <- ggplot(curve_df, aes(conc, viability, colour = series)) +
   scale_x_log10() +
   scale_colour_manual(values = c("CPD-A" = "#1f6fb4",
                                  "3\u00d7 higher IC50" = "#7a3b8f")) +
-  labs(title = "B  Read at one concentration",
-       subtitle = sprintf("the same shift, read vertically at %.1f µM", CONC),
+  labs(title = "Simplified to single-conc. measurement",
+       subtitle = sprintf("38 percentage points (pp) is equivalent to %dx IC50",
+                          thr$mcid_fold),
        x = "Concentration (µM)", y = "ATP (% of vehicle)") +
   theme(legend.position = "bottom")
 
@@ -332,21 +346,12 @@ p1c <- sim$mcid_by_donor %>%
   labs(title = "C  The same threshold, lot by lot",
        subtitle = "a lot at the top or bottom of the curve shows a smaller gap",
        x = NULL, y = "Viability gap equal to a 3-fold shift (pp)")
-
-(p1a | p1b) / p1c
 ```
 
-Panel C is the argument for deciding on the IC~50~ scale rather than the
-viability scale. **On the IC~50~ scale the rule is one number — a 3-fold
-shift — and it is the same for every lot.** Translated into percentage points
-it is not one number at all: it ranges from
-`r sprintf("%.0f", min(sim$mcid_by_donor$mcid_pp))` to
-`r sprintf("%.0f", max(sim$mcid_by_donor$mcid_pp))` pp across these eight lots,
-averaging `r round(MCID_PP, 1)` pp, because the same shift shows a smaller gap
-for a lot near either end of the curve.
-
-We will report both — viability because it is what was measured, the fold shift
-because it is what the decision needs — but from Module III onwards the
+```{r m1-threshold, fig.width=8, fig.height=4}
+(p1a | p1b)
+```
+From Module III onwards the
 comparison itself is made on the IC~50~ scale. Note in passing that translating
 at a single "typical" lot would have given
 `r round(thr$mcid_pp_naive, 1)` pp, over half again as large as the average. A

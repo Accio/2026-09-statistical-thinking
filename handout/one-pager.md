@@ -2,7 +2,7 @@
 
 Jitao David Zhang and Christian Weinmann, September 2026
 
-The workshop, consisting of nine 15-minute modules, aims to help you become familiar with statistical thinking. We learn how to ask questions that lead to better experimental design and data analysis.
+The workshop, consisting of nine modules, aims to help you become familiar with statistical thinking. We learn how to ask questions that lead to better experimental design and data analysis.
 
 ::: {.agenda}
 

@@ -67,6 +67,7 @@ Each module runs story (3 min) → simulation (5 min) → participant task (5 mi
 
 ```sh
 make help       # list targets
+make tools      # show the R, pandoc and PDF engine picked up on this machine
 make notebook   # participants' notebook  -> 2026-09-workshop-modules.html
 make appendix   # technical appendix      -> 2026-09-statistical-thinking.html
 make slides     # editable deck           -> output/2026-09-workshop-slides.pptx
@@ -78,7 +79,17 @@ Rendering the notebook also writes `output/figures/*.png` and `output/workshop/*
 
 `make clean` removes the deck and the handout; `make distclean` also removes the rendered documents and the generated figures.
 
-Needs `pandoc` and `weasyprint` in addition to R. Both are only used for the deck and the handout — the two documents render with `rmarkdown` alone.
+Needs `pandoc` in addition to R, and something that turns HTML into PDF. Both are only used for the deck and the handout — the two documents render with `rmarkdown` alone.
+
+The Makefile detects the toolchain itself, so the same `make all` works on a laptop and on the HPC; `make tools` prints what it found.
+
+| | laptop | HPC |
+|---|---|---|
+| R | `Rscript` on the `PATH` | `~/scripts/load-bioinfo-R.bash`, which loads the R module |
+| pandoc | `pandoc` on the `PATH` | `module load Pandoc` |
+| HTML -> PDF | `weasyprint` | headless Google Chrome, no WeasyPrint needed |
+
+Chrome honours the same `@page` rules in `handout/one-pager.css` as WeasyPrint, so the handout comes out as the same single A4 page either way. Any of the three can be forced, e.g. `make handout PANDOC=/opt/bin/pandoc` or `make handout CHROME=/usr/bin/chromium`.
 
 ## Slide deck and handout
 
@@ -88,6 +99,16 @@ Needs `pandoc` and `weasyprint` in addition to R. Both are only used for the dec
 | `handout/one-pager.md` | source of the A4 summary — agenda and key messages |
 | `handout/one-pager.css` | A4 page geometry and typography for the summary |
 | `Makefile` | builds all four outputs |
+
+The handout is set from one knob: `html { font-size }` in
+`handout/one-pager.css`. Every other size is an `em`, so that single value
+rescales the whole sheet. It is fitted to leave roughly 12 mm at the foot of
+the page, because how full the page looks depends on the font the machine
+actually has — Source Sans 3 sets about 5 mm shorter than the Liberation
+Sans / Arial fallback you get where Source Sans is not installed. `make
+handout` prints the free space it measured and **fails** if the summary ever
+spills onto a second page, so raising or lowering that one value is safe to
+try on either machine.
 
 The deck is generated as **PowerPoint**, so it stays editable after the build:
 101 slides, the notebook's own figures, and speaker notes with timings. It
