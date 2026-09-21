@@ -822,7 +822,7 @@ too wide — it is simply not entitled to whatever width it happens to have.
 
 ### Twelve measurements, two ways to spend them
 
-```{r m3-designs, fig.width=5.6, fig.height=4}
+```{r m3-designs, fig.width=5.5, fig.height=5.5}
 set.seed(104)  ## fixed so the deck and handout stay in sync
 gp <- sim$params
 
@@ -843,9 +843,18 @@ one_study <- function(n_lots, n_wells) {
 
 design_cmp <- bind_rows(
   map_dfr(1:params$n_sim, ~ one_study(12, 1)) %>%
-    mutate(design = "A: 12 lots\n× 1 well"),
+    mutate(design = "A: 12 donors × 1 rep"),
+  map_dfr(1:params$n_sim, ~ one_study(6, 2)) %>%
+    mutate(design = "B: 6 donors × 2 reps"),
+  map_dfr(1:params$n_sim, ~ one_study(4, 3)) %>%
+    mutate(design = "C: 4 donors × 3 reps"),
   map_dfr(1:params$n_sim, ~ one_study(3, 4)) %>%
-    mutate(design = "B: 3 lots\n× 4 wells"))
+    mutate(design = "D: 3 donors × 4 reps"),
+  map_dfr(1:params$n_sim, ~ one_study(2, 6)) %>%
+    mutate(design = "E: 2 donors × 6 reps"),
+  map_dfr(1:params$n_sim, ~ one_study(1, 12)) %>%
+    mutate(design = "F: 1 donors × 12 reps"))
+  
 
 export_data(design_cmp %>% group_by(design) %>%
               summarise(across(everything(),
@@ -857,17 +866,18 @@ export_data(design_cmp %>% group_by(design) %>%
 design_cmp %>%
   pivot_longer(starts_with("sd_"), names_to = "quantity", values_to = "estimate") %>%
   mutate(quantity = recode(quantity,
-           sd_between_lots = "spread BETWEEN lots\n(biological)",
-           sd_within_lot   = "spread WITHIN a lot\n(technical)")) %>%
+           sd_between_lots = "SD between donors \n(biological variability)",
+           sd_within_lot   = "SD within donor \n(technical variability)")) %>%
   ggplot(aes(design, estimate, fill = design)) +
   geom_violin(alpha = 0.6, colour = NA, na.rm = TRUE, width = 0.92) +
   geom_boxplot(width = 0.13, outlier.shape = NA, na.rm = TRUE) +
   tight_x() +
   facet_wrap(~ quantity, scales = "free_y") +
-  scale_fill_manual(values = c("#1f6fb4", "#c1443b"), guide = "none") +
-  labs(title = "Both designs use 12 measurements",
-       subtitle = "empty panel = that design cannot estimate that quantity at all",
-       x = NULL, y = expression("Estimated SD of log"[10]~"IC"[50]))
+  scale_fill_manual(values = royalbluegrayred(6), guide = "none") +
+  theme(axis.text.x = element_text(angle=90, hjust=1)) +
+  labs(title = "How to balance biological and technical replicates?",
+       subtitle = "Results from thousands of simulations. Empty panel: non-estimtable",
+       x = NULL, y = expression("Estimated standard deviation (SD) of log"[10]~"IC"[50]))
 ```
 
 Twelve lots × one well estimates lot-to-lot variation well and technical
@@ -919,8 +929,7 @@ vehicle_wells %>%
              alpha = 0.7) +
   scale_x_discrete(expand = expansion(add = 0.38)) +
   scale_fill_manual(values = day_cols, guide = "none") +
-  labs(title = "Run-day effect, in the vehicle wells",
-       subtitle = "no compound data needed",
+  labs(title = "Background signal in vehicle wells",
        x = NULL, y = expression("Raw signal (10"^6~"RLU)"))
 ```
 
@@ -941,8 +950,7 @@ sim$schedule %>%
   scale_x_discrete(expand = flush) +
   scale_y_discrete(expand = flush) +
   scale_fill_manual(values = day_cols) +
-  labs(title = "Which day each plate ran",
-       subtitle = "left: day is a block  ·  right: day is a confounder",
+  labs(title = "Day as a blocking factor or as a confounder",
        x = NULL, y = "Hepatocyte lot") +
   theme(panel.grid = element_blank(), legend.position = "bottom")
 ```
@@ -1006,24 +1014,44 @@ export_data(null_result, "m04_identical_compounds",
 null_result
 ```
 
-```{r m4-null-fig, fig.width=6.4, fig.height=3.0}
+```{r confounding_effects, fig.height=3, fig.width=4}
+block_data <- null_cpd$viab %>%
+  dplyr::select(donor_id, compound, ic50_uM) %>%
+  group_by(donor_id, compound) %>%
+  summarise(ic50_uM=mean(ic50_uM))
+conf_data <- null_cpd$viab_conf %>%
+  dplyr::select(donor_id, compound, ic50_uM) %>%
+  group_by(donor_id, compound) %>%
+  summarise(ic50_uM=mean(ic50_uM))
+block_conf_data <- rbind(cbind(block_data, type="Blocking"),
+                         cbind(conf_data, type="Confounding")) %>%
+  mutate(compound=ifelse(compound=="CPD-B", "CPD-A'", "CPD-A"))
+ggplot(block_conf_data, aes(x=compound, y=ic50_uM, color=compound)) +
+  facet_wrap(~type) +
+  geom_boxplot() +
+  scale_colour_manual(values = c("CPD-A"="#1f6fb4",
+                                 "CPD-A'"="#1f0fb4"), guide = "none") +
+  geom_point() + geom_path(aes(group=donor_id), col="darkgray")
+```
+
+```{r m4-null-fig, fig.width=5, fig.height=3.0}
 ## the question here is "any difference at all?", so this one is read against
 ## zero rather than against the relevance threshold
 null_result %>%
   mutate(row = factor(schedule, levels = c("Confounded", "Blocked")),
-         detected = if_else(p_value < 0.05, "difference 'detected'",
-                                            "nothing detected")) %>%
+         detected = if_else(p_value < 0.05, "signficant difference",
+                                            "non-significant")) %>%
   ggplot(aes(fold_shift, row, colour = detected)) +
   geom_vline(xintercept = 1, linewidth = 0.9, colour = "grey35") +
   scale_x_log10() +
   geom_linerange(aes(xmin = ci_low, xmax = ci_high), linewidth = 1.3) +
   geom_point(size = 2.8) +
-  scale_colour_manual(values = c("difference 'detected'" = "#a33",
-                                 "nothing detected" = "#3b7a57")) +
+  scale_colour_manual(values = c("signficant difference" = "#a33",
+                                 "non-significant" = "#3b7a57")) +
   scale_y_discrete(expand = expansion(add = 0.5)) +
-  labs(title = "Two compounds that are identical by construction",
-       subtitle = "any interval that misses 1 is an artifact of the schedule",
-       x = "Apparent fold shift in cytotoxicity IC50", y = NULL) +
+  labs(title = "Simulating a comparison of two identical compounds",
+       subtitle = "An interval that does not include 1 is an artifact",
+       x = "Apparent fold change in cytotoxicity IC50", y = NULL) +
   theme(legend.position = "bottom")
 ```
 
@@ -1082,7 +1110,7 @@ later. After the experiment, no analysis can unmix a confounder.
 Here is the study as two clouds of dots — the way this comparison is usually
 drawn.
 
-```{r m5-clouds, fig.width=6, fig.height=3.7}
+```{r m5-clouds, fig.width=5, fig.height=3.7}
 set.seed(105)  ## fixed so the deck and handout stay in sync
 p5a <- dm %>%
   ggplot(aes(compound, viability, colour = compound)) +
@@ -1092,19 +1120,19 @@ p5a <- dm %>%
   tight_x() +
   scale_colour_manual(values = cpd_cols, guide = "none") +
   coord_cartesian(ylim = c(0, 100)) +
-  labs(title = "A  Two groups, unpaired",
-       subtitle = "the clouds overlap",
+  labs(title = "Two groups, unpaired",
        x = NULL, y = "Viability (% of vehicle)")
 
 p5b <- dm %>%
   ggplot(aes(compound, viability)) +
   geom_line(aes(group = donor_id), colour = "grey65", linewidth = 0.8) +
   geom_point(aes(colour = compound), size = 2.8, alpha = 0.9) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, colour = "grey25") +
+
   scale_x_discrete(expand = expansion(add = 0.3)) +
   scale_colour_manual(values = cpd_cols, guide = "none") +
   coord_cartesian(ylim = c(0, 100)) +
-  labs(title = "B  The same data, paired",
-       subtitle = "every lot moves the same way",
+  labs(title = "Two groups, paired",
        x = NULL, y = NULL)
 
 p5a | p5b
@@ -1153,12 +1181,12 @@ export_data(test_table, "m05_four_tests",
 test_table
 ```
 
-```{r m5-tests-fig, fig.width=6.8, fig.height=3.6}
+```{r m5-tests-fig, fig.width=6.8, fig.height=3}
 test_table %>%
   transmute(label = c("Student t, unpaired", "Welch t, unpaired",
                       "Paired t", "Wilcoxon signed rank"),
             estimate = fold_shift, lwr = ci_low, upr = ci_high) %>%
-  forest("Four tests, one dataset",
+  forest("Comparing between unpaired and paired tests",
          sprintf("grey: shifts too small to act on (threshold %g-fold)",
                  MCID_FOLD))
 ```
@@ -1259,7 +1287,7 @@ before you test it, and the right test is usually obvious.
 
 Two values in the dataset look wrong. They are not the same kind of thing.
 
-```{r m6-candidates, fig.width=7, fig.height=4.4}
+```{r m6-candidates, fig.width=6, fig.height=3.5}
 lot_flags <- viab %>%
   group_by(donor_id, compound) %>%
   mutate(well_z = (viability_pct - median(viability_pct)) /
@@ -1278,17 +1306,16 @@ lot_flags %>%
              position = position_dodge(width = 0.55)) +
   scale_x_discrete(expand = expansion(add = 0.5)) +
   ## the bubble well is the CPD-B point of HH2, dodged to the right of center
-  annotate("curve", x = 5.75, xend = 4.3, y = 13, yend = 20.3, curvature = -0.3,
-           arrow = arrow(length = unit(0.18, "cm")), colour = "grey35") +
-  annotate("text", x = 8.45, y = 9, hjust = 1, size = GEOM_PT, colour = "grey25",
-           label = "candidate 1: one well,\nfar from its two siblings") +
-  annotate("curve", x = 1.6, xend = 0.92, y = 66, yend = 45, curvature = 0.3,
-           arrow = arrow(length = unit(0.18, "cm")), colour = "grey35") +
-  annotate("text", x = 1.7, y = 72, hjust = 0, size = GEOM_PT, colour = "grey25",
-           label = "candidate 2: a whole lot,\nlow for BOTH compounds") +
+  ## annotate("curve", x = 5.3, xend = 4.3, y = 33, yend = 20.3, curvature = -0.3,
+  ##         arrow = arrow(length = unit(0.18, "cm")), colour = "grey35") +
+  ## annotate("text", x = 7, y = 40, hjust = 1, size = GEOM_PT, colour = "grey25",
+  ##         label = "Suspicious: one well,\nfar from other two replicates") +
+  ## annotate("curve", x = 1.6, xend = 0.92, y = 66, yend = 45, curvature = 0.3,
+  ##          arrow = arrow(length = unit(0.18, "cm")), colour = "grey35") +
+  ## annotate("text", x = 1.7, y = 72, hjust = 0, size = GEOM_PT, colour = "grey25",
+  ##         label = "candidate 2: a whole lot,\nlow for BOTH compounds") +
   scale_colour_manual(values = cpd_cols) +
-  labs(title = "All 48 wells",
-       subtitle = "one of these is an artifact and one is biology",
+  labs(title = "Data of 48 wells",
        x = "Hepatocyte lot", y = "Viability (% of vehicle)") +
   coord_cartesian(ylim = c(0, 104)) +
   theme(legend.position = "bottom")
@@ -1375,13 +1402,14 @@ export_data(sensitivity, "m06_sensitivity_analysis",
 sensitivity
 ```
 
-```{r m6-sensitivity-fig, fig.width=6.8, fig.height=3.6}
+```{r m6-sensitivity-fig, fig.width=6.8, fig.height=3.4}
 sensitivity %>%
-  transmute(label = c("keep everything", "drop the air-bubble well",
-                      "drop the sensitive lot", "drop both"),
+  transmute(label = c("keep everything",
+                      "drop the air-bubble well",
+                      "drop the most sensitive donor",
+                      "drop both"),
             estimate = fold_shift, lwr = ci_low, upr = ci_high) %>%
-  forest("The conclusion under every exclusion rule",
-         "the documented exclusion is harmless; the unjustified one is not")
+  forest("Sensitivity analysis")
 ```
 
 Each row is the estimated fold shift, with the range of shifts the data are
@@ -1495,7 +1523,7 @@ A p-value is **not**:
 
 ### Confidence intervals, and what "95%" refers to
 
-```{r m7-coverage, fig.width=6, fig.height=4.8}
+```{r m7-coverage, fig.width=3, fig.height=5}
 set.seed(107)  ## fixed so the deck and handout stay in sync
 coverage_sims <- replicate_studies(100, n_donors = 8, n_wells = 3, fold = 5)
 ## the simulated truth, known exactly - no need to estimate it from the runs
@@ -1514,9 +1542,9 @@ coverage_sims %>%
   scale_colour_manual(values = c(`TRUE` = "grey55", `FALSE` = "#c1443b"),
                       labels = c(`TRUE` = "covers the truth",
                                  `FALSE` = "misses")) +
-  labs(title = "One hundred repeats of the same study, one interval each",
-       subtitle = "the truth is fixed; the intervals move",
-       x = "Simulated study (sorted)", y = "Estimated fold shift") +
+  labs(title = "100 repeats of the same study",
+       subtitle="Confidence intervals are shown",
+       x = "Simulated study (sorted)", y = "Estimated fold change") +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(),
         legend.position = "bottom")
 ```
@@ -1537,7 +1565,7 @@ Only B can be compared with a threshold. Only B supports a decision.
 
 ### Three results, three different conclusions
 
-```{r m7-three, fig.width=6.6, fig.height=3.3}
+```{r m7-three, fig.width=6.6, fig.height=3}
 three <- tribble(
   ~result,                     ~estimate, ~lwr, ~upr,
   "A  large, very uncertain",      6.0,    1.2, 30.0,
@@ -1563,15 +1591,14 @@ ggplot(three, aes(estimate, fct_rev(result), colour = verdict)) +
   geom_linerange(aes(xmin = lwr, xmax = upr), linewidth = 1.2) +
   geom_point(size = 3) +
   scale_y_discrete(expand = expansion(add = 0.42)) +
-  annotate("text", x = MCID_FOLD * 1.1, y = 0.56, hjust = 0, size = GEOM_PT,
+  annotate("text", x = MCID_FOLD * 1.05, y = 0.8, hjust = 0, size = GEOM_PT,
            label = sprintf("threshold %g-fold", MCID_FOLD)) +
   guides(colour = guide_legend(nrow = 2)) +
   scale_colour_manual(values = c("relevant difference" = "#3b7a57",
                                  "no relevant difference" = "#4c8fbd",
                                  "inconclusive" = "#d9a441")) +
-  labs(title = "Read the interval against the threshold, not against zero",
-       subtitle = "grey: shifts too small to act on",
-       x = "Fold shift in cytotoxicity IC50", y = NULL) +
+  labs(title = "Interpreting confidence intervals",
+       x = "Fold change in cytotoxicity IC50", y = NULL) +
   theme(legend.position = "bottom")
 ```
 
@@ -1949,14 +1976,8 @@ export_data(
 
 ### Reading
 
-* Krzywinski & Altman, *Points of Significance*, Nature Methods (2013–2015) —
-  short, visual, and written for exactly this audience
-* Lazic, *Experimental Design for Laboratory Biologists* (2016) — the best
-  single book on pseudoreplication and blocking in bench science
-* Amrhein, Greenland & McShane, *Retire statistical significance*, Nature
-  (2019) — the argument behind Module VII
-* The ARRIVE and *Nature* reporting checklists — useful even when you are not
-  publishing
+* *Points of Significance* series of Nature Methods
+* Lazic, *Experimental Design for Laboratory Biologists* (2016)
 
 ### And otherwise
 
