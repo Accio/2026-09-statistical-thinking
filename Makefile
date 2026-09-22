@@ -5,6 +5,7 @@
 #   make slides     an editable PowerPoint deck
 #   make handout    the one-page A4 summary
 #   make poster     the A4 poster of the nine questions
+#   make survey     the A4 feedback form
 #   make all        everything
 #   make tools      show which R / pandoc / PDF engine was picked up here
 #
@@ -99,19 +100,29 @@ POSTER_SRC  := $(OUTDIR)/poster.md
 POSTER_HTML := $(OUTDIR)/2026-09-workshop-poster.html
 POSTER_OUT  := $(OUTDIR)/2026-09-workshop-poster.pdf
 
+# The feedback form. handout/survey.md is plain text; survey.awk turns the
+# rating rows and the write-in lines into markup Markdown cannot express.
+SURVEY_MD   := handout/survey.md
+SURVEY_AWK  := handout/survey.awk
+SURVEY_CSS  := handout/survey.css
+SURVEY_SRC  := $(OUTDIR)/survey-form.md
+SURVEY_HTML := $(OUTDIR)/2026-09-workshop-survey.html
+SURVEY_OUT  := $(OUTDIR)/2026-09-workshop-survey.pdf
+
 .DEFAULT_GOAL := help
 .PHONY: all help tools require-pandoc notebook appendix slides handout poster \
-        reference-doc check-onepage clean distclean
+        survey reference-doc check-onepage clean distclean
 
 ## ---------------------------------------------------------------- targets
 
-all: notebook appendix slides handout poster
+all: notebook appendix slides handout poster survey
 
 notebook: $(NOTEBOOK).html
 appendix: $(APPENDIX).html
 slides:   $(SLIDES_OUT)
 handout:  $(HANDOUT_OUT)
 poster:   $(POSTER_OUT)
+survey:   $(SURVEY_OUT)
 
 ## ------------------------------------------------------------- R documents
 
@@ -166,6 +177,19 @@ $(POSTER_OUT): $(POSTER_SRC) $(POSTER_CSS) | $(OUTDIR) require-pandoc
 	@echo "wrote $@ (via $(PDF_ENGINE))"
 	@$(MAKE) --no-print-directory check-onepage PDF=$@ CSS=$(POSTER_CSS)
 
+## ------------------------------------------------------------------ survey
+
+# The feedback form, one A4 page to print and hand out at the end.
+$(SURVEY_SRC): $(SURVEY_MD) $(SURVEY_AWK) | $(OUTDIR)
+	awk -f $(SURVEY_AWK) $< > $@
+
+$(SURVEY_OUT): $(SURVEY_SRC) $(SURVEY_CSS) | $(OUTDIR) require-pandoc
+	$(PANDOC) $< --standalone --embed-resources --css=$(SURVEY_CSS) \
+	  --metadata title="Statistical thinking --- survey" -o $(SURVEY_HTML)
+	$(call html2pdf,$(SURVEY_HTML),$@)
+	@echo "wrote $@ (via $(PDF_ENGINE))"
+	@$(MAKE) --no-print-directory check-onepage PDF=$@ CSS=$(SURVEY_CSS)
+
 ## ------------------------------------------------------------- page check
 
 # A one-page sheet is only useful if it is genuinely one page, and how much
@@ -210,7 +234,8 @@ require-pandoc:
 
 clean:
 	rm -f $(SLIDES_OUT) $(HANDOUT_OUT) $(HANDOUT_HTML) \
-	      $(POSTER_OUT) $(POSTER_HTML) $(POSTER_SRC)
+	      $(POSTER_OUT) $(POSTER_HTML) $(POSTER_SRC) \
+	      $(SURVEY_OUT) $(SURVEY_HTML) $(SURVEY_SRC)
 
 distclean: clean
 	rm -f $(NOTEBOOK).html $(APPENDIX).html
@@ -224,6 +249,7 @@ help:
 	@echo "  make slides     editable deck           -> $(SLIDES_OUT)"
 	@echo "  make handout    one-page A4 summary     -> $(HANDOUT_OUT)"
 	@echo "  make poster     A4 poster of questions  -> $(POSTER_OUT)"
+	@echo "  make survey     A4 feedback form        -> $(SURVEY_OUT)"
 	@echo "  make all        all of the above"
 	@echo
 	@echo "  make tools           show the detected R / pandoc / PDF engine"

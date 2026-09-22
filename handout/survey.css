@@ -1,0 +1,106 @@
+/* One A4 survey form, to be printed and filled in with a pen.
+
+   The source is handout/survey.md, rebuilt into a form by handout/survey.awk:
+   a rating row becomes a .scale div of [label][points][label] spans, and each
+   write-in line becomes an empty .rule div. Bare <p> children of <body> are
+   therefore only the intro and the ten questions.
+
+   Same discipline as the other sheets: one knob on html, every other size in
+   em, and `make survey` fails if it spills to a second page. Deliberately no
+   background tints --- this one gets printed and written on.
+
+   Note that the "mm free at the foot" the build reports is measured to the
+   last piece of *text*, and this sheet ends with blank write-in rules, so it
+   reads about 25 mm higher than the truth. The real slack here is ~7 mm. */
+
+@page {
+  size: A4;
+  margin: 11mm 12mm 8mm 12mm;
+}
+
+/* the one knob --- see the note in handout/one-pager.css */
+html { font-size: 12.5pt; }
+
+body {
+  font-family: "Source Sans 3", "Source Sans Pro", "DejaVu Sans", sans-serif;
+  line-height: 1.35;
+  color: #1a1a1a;
+  margin: 0;
+}
+
+/* pandoc --standalone emits its own <h1 class="title"> from the metadata */
+h1.title, header#title-block-header { display: none; }
+
+h1 {
+  font-size: 1.5em;
+  line-height: 1.12;
+  margin: 0 0 0.3em 0;
+  padding-bottom: 0.28em;
+  border-bottom: 2pt solid #1f6fb4;
+  color: #004495;
+}
+
+/* the questions */
+body > p {
+  margin: 0 0 0.4em 0;
+  break-after: avoid;          /* never strand a question above its scale */
+}
+
+body > p strong:first-child {
+  color: #004495;
+  font-weight: 700;
+}
+
+/* the intro line, which is the only other bare paragraph */
+h1 + p {
+  margin: 0 0 1.2em 0;
+  font-size: 0.95em;
+  font-style: italic;
+  color: #3a3a3a;
+}
+
+/* ---- rating rows ------------------------------------------------------- */
+.scale { margin: 0 0 1.25em 0; break-inside: avoid; }
+
+/* Fixed-width label columns and fixed-width boxes make every row exactly the
+   same shape, so the boxes of questions 1-7 line up down the page. Plain
+   inline-blocks rather than flexbox: every print engine gets this right. */
+.scale p {
+  margin: 0;
+  text-align: center;
+}
+
+.scale .lo, .scale .hi {
+  display: inline-block;
+  width: 8.6em;
+  font-size: 0.88em;
+  color: #555555;
+  white-space: nowrap;
+}
+.scale .lo { text-align: right;  padding-right: 0.7em; }
+.scale .hi { text-align: left;   padding-left: 0.7em; }
+
+/* a box to tick, sized in em so it tracks the type */
+.scale .pt {
+  display: inline-block;
+  width: 1.55em;
+  height: 1.55em;
+  line-height: 1.45em;
+  margin: 0 1.05em;
+  text-align: center;
+  border: 0.9pt solid #7f96ab;
+  border-radius: 50%;
+  color: #004495;
+  font-weight: 600;
+}
+
+/* ---- write-in lines ---------------------------------------------------- */
+.rule {
+  height: 2.3em;
+  margin: 0 0 0.2em 0;
+  border-bottom: 0.7pt solid #9aa7b4;
+  break-inside: avoid;
+}
+
+/* the last rule of a block carries the gap to the next question */
+.rule + p { margin-top: 1.1em; }

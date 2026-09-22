@@ -73,6 +73,7 @@ make appendix   # technical appendix      -> 2026-09-statistical-thinking.html
 make slides     # editable deck           -> output/2026-09-workshop-slides.pptx
 make handout    # one-page A4 summary     -> output/2026-09-workshop-one-pager.pdf
 make poster     # A4 poster of questions  -> output/2026-09-workshop-poster.pdf
+make survey     # A4 feedback form        -> output/2026-09-workshop-survey.pdf
 make all        # all of the above (about 70 s from clean)
 ```
 
@@ -101,7 +102,10 @@ Chrome honours the same `@page` rules in `handout/one-pager.css` as WeasyPrint, 
 | `handout/one-pager.css` | A4 page geometry and typography for the summary |
 | `handout/poster.awk` | pulls the poster out of `one-pager.md` — questions only |
 | `handout/poster.css` | A4 page geometry and typography for the poster |
-| `Makefile` | builds all five outputs |
+| `handout/survey.md` | source of the feedback form — plain text, edit this |
+| `handout/survey.awk` | builds the rating rows and write-in rules the form needs |
+| `handout/survey.css` | A4 page geometry and typography for the form |
+| `Makefile` | builds all six outputs |
 
 The handout is set from one knob: `html { font-size }` in
 `handout/one-pager.css`. Every other size is an `em`, so that single value
@@ -123,6 +127,17 @@ disagree. The breaks are the one thing the poster adds; which modules they
 follow is the `split("III VI", ...)` line at the top of `handout/poster.awk`.
 Its typography is tuned the same way, from `html { font-size }` in
 `handout/poster.css`, and it gets the same one-page check.
+
+The **survey** is the feedback form to print and hand out at the end. Write it
+in `handout/survey.md` as plain text — a question per paragraph, and under a
+rating question a line like `Poor    1   2   3   4   5   6   Excellent`, or a
+row of underscores where you want space to write. Markdown collapses those
+runs of spaces, so `handout/survey.awk` turns each rating line into a row of
+tick-boxes and each underscore line into a ruled writing line before pandoc
+sees it. Add or reorder questions freely; nothing but the plain text needs
+touching. One caveat: because the sheet ends in blank rules, the free-space
+figure `make survey` prints is measured to the last piece of *text* and reads
+about 25 mm high — the real headroom is about 7 mm.
 
 The deck is generated as **PowerPoint**, so it stays editable after the build:
 101 slides, the notebook's own figures, and speaker notes with timings. It
