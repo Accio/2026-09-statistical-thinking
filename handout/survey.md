@@ -3,11 +3,11 @@
 
 We appreciate your questions, suggestions, criticism, and feedback!
 
-Question 1: How is your overall experience of the workshop?
+Question 1: How has been your overall experience of the workshop?
 
 Poor    1   2   3   4   5   6   Excellent
 
-Question 2: How difficult do you think were the material?
+Question 2: How difficult do you think was the material?
 
 Too easy    1   2   3   4   5   6   Too difficult
 
@@ -15,7 +15,7 @@ Question 3: How much material do you think we covered?
 
 Too little    1   2   3   4   5   6   Too much
 
-Question 4: How satisfied are you with the length of the workshop?
+Question 4: How do you judge the length of the workshop?
 
 Too short    1   2   3   4   5   6   Too long
 

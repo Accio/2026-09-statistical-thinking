@@ -703,17 +703,27 @@ Every number the analysis uses, in three steps: the 48 wells as measured, the
 are the quantity we actually decide on.
 
 ```{r m3-table-wells}
-viab %>%
+viab_viz <- viab %>%
   transmute(Lot = donor_id, Compound = compound, Day = weekday,
             Well = replicate,
             ##`Raw RLU` = raw_rlu,
             `Viability (%)` = viability_pct,
-            `IC50 (µM)` = ic50_uM) %>%
+            `IC50 (µM)` = ic50_uM)
+viab_viz %>%
   knitr::kable(align = "llcrrrr",
                caption = "Data of 48 wells. Viability is the output of the plate reader at one particular concentration of both compounds. IC50 is derived from fitting a Hill function to the concentration-response data.") %>%
   kableExtra::kable_styling(bootstrap_options = c("striped", "condensed"),
                             full_width = FALSE, font_size = 12) %>%
   kableExtra::scroll_box(height = "360px")
+```
+
+```{r}
+viab_viz %>% 
+  dplyr::select(-Day, -Well, -`IC50 (µM)`) %>%
+  pivot_wider(names_from=c("Lot"),
+              values_from="Viability (%)",
+              values_fn=~paste(.x, collapse=", ")) %>%
+  t
 ```
 
 ```{r m3-table-lots}
@@ -1478,21 +1488,20 @@ p6a <- ggplot(null_world, aes(estimate)) +
   geom_histogram(data = filter(null_world,
                                abs(log10(estimate)) >= abs(log10(observed))),
                  bins = 45, fill = "#c1443b", colour = "white") +
-  scale_x_log10() +
+  scale_x_log10(limits=c(0.3, 3)) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.04))) +
-  geom_vline(xintercept = c(observed, 1 / observed), linetype = "dashed",
-             linewidth = 1) +
-  labs(title = "A  A world with no difference",
-       subtitle = sprintf("dashed: our observed %.2f-fold", observed),
-       x = "Fold shift between compounds", y = "Simulated studies")
+  labs(title = "Compare CPD-A and CPD-A'",
+       subtitle = "With identical population mean",
+       x = "Fold change between compounds", y = "Simulated studies")
 
 p6b <- ggplot(null_world, aes(p_value)) +
   geom_histogram(breaks = seq(0, 1, 0.05), fill = "grey78", colour = "white") +
   geom_histogram(data = filter(null_world, p_value < 0.05),
                  breaks = seq(0, 1, 0.05), fill = "#c1443b", colour = "white") +
   scale_y_continuous(expand = expansion(mult = c(0, 0.04))) +
-  labs(title = "B  P-values under the null",
-       subtitle = sprintf("flat; %.1f%% below 0.05",
+  geom_hline(yintercept=params$n_sim*0.05, linetype=2) +
+  labs(title = "P-values under the null hypothesis",
+       subtitle = sprintf("%.1f%% simulations report p<0.05",
                           100 * mean(null_world$p_value < 0.05)),
        x = "p-value", y = "Simulated studies")
 
@@ -1521,9 +1530,107 @@ A p-value is **not**:
 * the probability that the experiment will replicate
 * anything at all about the **size** of the effect
 
+```{r effect_size_p_value, fig.height=4, fig.width=4}
+veh_group <- rnorm(10, 0, 1)
+drug1_group <- rnorm(10, 1.5, 0.5)
+drug2_group <- rnorm(10, 3, 4)
+drug3_group <- rnorm(10, 3, 1.25)
+effect_size_p_df <- data.frame(group=ofactor(rep(c("Vehicle", "Drug1", "Drug2", "Drug3"),
+                                         each=10)),
+                               value=c(veh_group, drug1_group, drug2_group, drug3_group))
+effect_size_p_df %>%
+  ggplot(aes(group, value, colour = group)) +
+  geom_point(size = 2.8, alpha = 0.85,
+             position = position_jitter(width = 0.09, height = 0, seed = 7)) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, colour = "grey25") +
+  tight_x() +
+  scale_colour_manual(values = c("Vehicle"="darkgray",
+                                 "Drug1"="lightblue",
+                                 "Drug2"="orange",
+                                 "Drug3"="#056f92"), guide = "none") +
+  coord_cartesian(ylim = c(-3,10)) + 
+  scale_y_continuous(oob=scales::squish) +
+  labs(title = "Effect size and p-values",
+       x = NULL, y = "Arbitrary unit")
+```
+
+```{r}
+## I want to compare each group of drug to Vehicle using t-test, and get difference in mean values.
+drug_test_lists <- split(effect_size_p_df$value, effect_size_p_df$group)
+drug_t_tests <- do.call(rbind, lapply(drug_test_lists, function(x) {
+  ttest <- t.test(x, drug_test_lists[[1]])
+  estimates <- ttest$estimate
+  pvalue <- ttest$p.value
+  ci <- ttest$conf.int
+  res <- c(diff=unname(estimates[1]-estimates[2]),
+              p=pvalue,
+              ci_low=ci[1],
+              ci_high=ci[2])
+})) %>% as.data.frame
+drug_t_tests$Comparison <- paste0(rownames(drug_t_tests),
+                                 " vs vehicle")
+drug_t_tests <- dplyr::select(drug_t_tests,
+                              "Comparison", "diff", "p", "ci_low", "ci_high")
+gt::gt(drug_t_tests) %>%
+  fmt_number(
+    columns=c("diff", "ci_low", "ci_high"),
+    decimals = 2,
+    use_seps = FALSE
+  ) %>%
+  fmt_scientific(columns="p", decimals=2) %>%
+  opt_row_striping(row_striping=TRUE)
+```
+
+```{r  effect_size_p_value_nonzero_diff, fig.height=4, fig.width=4}
+effect_size_p_df %>%
+  ggplot(aes(group, value, colour = group)) +
+  geom_point(size = 2.8, alpha = 0.85,
+             position = position_jitter(width = 0.09, height = 0, seed = 7)) +
+  stat_summary(fun = mean, geom = "crossbar", width = 0.5, colour = "grey25") +
+  tight_x() +
+  geom_hline(yintercept=1.5, col="#B35", linetype=2, lwd=1.5) +
+  scale_colour_manual(values = c("Vehicle"="darkgray",
+                                 "Drug1"="lightblue",
+                                 "Drug2"="orange",
+                                 "Drug3"="#056f92"), guide = "none") +
+  coord_cartesian(ylim = c(-3,10)) + 
+  scale_y_continuous(oob=scales::squish) +
+  labs(title = "Effect size and p-values",
+  subtitle="We now consider a difference of 1.5 as meaningful",
+       x = NULL, y = "Arbitrary unit")
+```
+
+```{r}
+## I want to compare each group of drug to Vehicle using t-test, and get difference in mean values.
+drug_t_tests_nonzero <- do.call(rbind, lapply(drug_test_lists, function(x) {
+  ttest <- t.test(x, drug_test_lists[[1]], mu=1.5, alternative="greater")
+  estimates <- ttest$estimate
+  pvalue <- ttest$p.value
+  ci <- ttest$conf.int
+  res <- c(diff=unname(estimates[1]-estimates[2]),
+              p=pvalue,
+              ci_low=ci[1],
+              ci_high=ci[2])
+})) %>% as.data.frame
+drug_t_tests_nonzero$Comparison <- paste0(rownames(drug_t_tests_nonzero),
+                                 " vs vehicle")
+drug_t_tests_nonzero$Threshold <- 1.5
+drug_t_tests_nonzero <- dplyr::select(drug_t_tests_nonzero,
+                              "Comparison", "Threshold", "diff", "p", "ci_low", "ci_high")
+gt::gt(drug_t_tests_nonzero) %>%
+  fmt_number(
+    columns=c("diff", "ci_low", "ci_high"),
+    decimals = 2,
+    use_seps = FALSE
+  ) %>%
+  fmt_scientific(columns="p", decimals=2) %>%
+  opt_row_striping(row_striping=TRUE)
+```
+
+
 ### Confidence intervals, and what "95%" refers to
 
-```{r m7-coverage, fig.width=3, fig.height=5}
+```{r m7-coverage, fig.width=3.5, fig.height=5}
 set.seed(107)  ## fixed so the deck and handout stay in sync
 coverage_sims <- replicate_studies(100, n_donors = 8, n_wells = 3, fold = 5)
 ## the simulated truth, known exactly - no need to estimate it from the runs
@@ -1540,11 +1647,10 @@ coverage_sims %>%
   scale_y_log10() +
   coord_flip() +
   scale_colour_manual(values = c(`TRUE` = "grey55", `FALSE` = "#c1443b"),
-                      labels = c(`TRUE` = "covers the truth",
+                      labels = c(`TRUE` = "covers the ground truth",
                                  `FALSE` = "misses")) +
-  labs(title = "100 repeats of the same study",
-       subtitle="Confidence intervals are shown",
-       x = "Simulated study (sorted)", y = "Estimated fold change") +
+  labs(title = "Confindence intervals of 100 repeats",
+       x = "Simulated study (sorted by estimated effect size)", y = "Estimated fold change") +
   theme(axis.text.y = element_blank(), axis.ticks.y = element_blank(),
         legend.position = "bottom")
 ```
@@ -1567,10 +1673,10 @@ Only B can be compared with a threshold. Only B supports a decision.
 
 ```{r m7-three, fig.width=6.6, fig.height=3}
 three <- tribble(
-  ~result,                     ~estimate, ~lwr, ~upr,
-  "A  large, very uncertain",      6.0,    1.2, 30.0,
-  "B  tiny, very precise",         1.15,   1.08, 1.22,
-  "C  moderate, moderate CI",      4.8,    3.1,  7.5) %>%
+  ~result,                     ~estimate, ~lwr, ~upr, ~p, 
+  "A  large, very uncertain",      6.0,    1.2, 30.0, 0.15, 
+  "B  tiny, very (or too) precise",         1.15,   1.08, 1.22, 1,
+  "C  moderate, moderate CI",      4.8,    3.1,  7.5, 0.03) %>%
   mutate(verdict = case_when(
     lwr > MCID_FOLD  ~ "relevant difference",
     upr < MCID_FOLD  ~ "no relevant difference",
@@ -1591,8 +1697,8 @@ ggplot(three, aes(estimate, fct_rev(result), colour = verdict)) +
   geom_linerange(aes(xmin = lwr, xmax = upr), linewidth = 1.2) +
   geom_point(size = 3) +
   scale_y_discrete(expand = expansion(add = 0.42)) +
-  annotate("text", x = MCID_FOLD * 1.05, y = 0.8, hjust = 0, size = GEOM_PT,
-           label = sprintf("threshold %g-fold", MCID_FOLD)) +
+  geom_text(aes(label=paste0("p=", p)),
+            vjust=1.5) +
   guides(colour = guide_legend(nrow = 2)) +
   scale_colour_manual(values = c("relevant difference" = "#3b7a57",
                                  "no relevant difference" = "#4c8fbd",
@@ -1685,21 +1791,20 @@ export_data(power_summary, "m08_power_by_n",
 power_summary
 ```
 
-```{r m8-power-fig, fig.width=7, fig.height=7}
+```{r m8-power-fig, fig.width=7, fig.height=3}
 p8a <- power_summary %>%
   pivot_longer(c(power_significant, power_decisive),
                names_to = "criterion", values_to = "power") %>%
   mutate(criterion = recode(criterion,
-           power_significant = "p < 0.05\n(\"is there any difference?\")",
-           power_decisive    = "CI above the threshold\n(\"is it big enough to act on?\")")) %>%
+           power_significant = "p < 0.05",
+           power_decisive    = "CI above the threshold")) %>%
   ggplot(aes(n_donors, power, colour = criterion)) +
   geom_hline(yintercept = 0.8, linetype = "dashed", colour = "grey45") +
   geom_line(linewidth = 1.1) + geom_point(size = 2.6) +
   scale_x_continuous(breaks = c(2, 3, 4, 6, 12)) +
   scale_y_continuous(labels = scales::percent, limits = c(0, 1)) +
   scale_colour_manual(values = c("#4c8fbd", "#3b7a57")) +
-  labs(title = "A  Two kinds of power",
-       subtitle = "getting a small p-value is much easier than answering the question",
+  labs(title = "Power increases with sample size",
        x = "Independent hepatocyte lots", y = "Proportion of studies") +
   theme(legend.position = "bottom")
 
@@ -1713,12 +1818,13 @@ p8b <- power_grid %>%
   geom_vline(xintercept = median(power_grid$estimate[power_grid$n_donors == 24]),
              linetype = "dashed", linewidth = 1) +
   scale_x_log10() +
-  scale_fill_brewer(palette = "Blues", guide = "none") +
-  labs(title = "B  The estimate itself, not just its p-value",
-       subtitle = "at n = 3 the study can return almost any answer",
-       x = "Estimated fold shift", y = NULL)
+  geom_vline(xintercept=thr$true_fold, col="#333", linestyle= "dashed") +
+  scale_fill_manual(values=royalbluegrayred(5), guide = "none") +
+  coord_flip () +
+  labs(title = "Distribution of estimated fold changes",
+       x = "Estimated fold change", y = NULL)
 
-p8a / p8b
+p8b + p8a
 ```
 
 Two things to take from panel A. First, power is not a property of an assay —
@@ -1782,15 +1888,22 @@ is a biased one, and the bias always points the same way.
 
 ### Where to spend twenty-four wells
 
-```{r m8-allocation, fig.width=5.6, fig.height=3.5}
+```{r m8-allocation-prep}
 set.seed(110)  ## fixed so the deck and handout stay in sync
 allocation <- bind_rows(
+  replicate_studies(params$n_sim, n_donors = 2, n_wells = 12,
+                    fold = thr$true_fold) %>%
+    mutate(allocation = "2 donors × 12 replicates"),
   replicate_studies(params$n_sim, n_donors = 3, n_wells = 8,
                     fold = thr$true_fold) %>%
-    mutate(allocation = "3 lots × 8 wells"),
+    mutate(allocation = "3 donors × 8 replicates"),
   replicate_studies(params$n_sim, n_donors = 8, n_wells = 3,
                     fold = thr$true_fold) %>%
-    mutate(allocation = "8 lots × 3 wells"))
+    mutate(allocation = "8 donors × 3 replicates"),
+  replicate_studies(params$n_sim, n_donors = 12, n_wells = 2,
+                    fold = thr$true_fold) %>%
+    mutate(allocation = "12 donors × 2 replicates"))  %>%
+  mutate(allocation=ofactor(allocation))
 
 allocation %>%
   group_by(allocation) %>%
@@ -1799,22 +1912,20 @@ allocation %>%
             median_ci_width   = median(upr - lwr), .groups = "drop") %>%
   mutate(across(where(is.numeric), ~ round(.x, 3))) %>%
   export_data("m08_allocation",
-              "24 wells spent as 3 lots x 8 wells or 8 lots x 3 wells")
+              "24 wells spent in different ways")
+```
 
+```{r m8-allocation, fig.width=5, fig.height=5}
 allocation %>%
   ggplot(aes(estimate, fill = allocation)) +
   geom_density(alpha = 0.55, colour = NA) +
+  facet_wrap(~allocation, ncol=1) +
   scale_y_continuous(expand = expansion(mult = c(0, 0.05))) +
   geom_vline(xintercept = MCID_FOLD, linetype = "dashed", linewidth = 1) +
   scale_x_log10() +
-  annotate("text", x = MCID_FOLD * 1.05, y = 0, hjust = 0, vjust = -0.6,
-           size = GEOM_PT,
-           label = "relevance threshold") +
-  scale_fill_manual(values = c("#c1443b", "#3b7a57")) +
-  labs(title = "The same 24 wells, allocated two ways",
-       subtitle = "technical replicates cannot substitute for independent lots",
-       x = "Estimated fold shift", y = "Density") +
-  theme(legend.position = "bottom")
+  scale_fill_manual(values = royalbluegrayred(4)) +
+  labs(title = "Balancing replicates to maximize power",
+       x = "Estimated fold change", y = "Density")
 ```
 
 Both use 24 wells per compound. Three lots with eight wells each measures three
